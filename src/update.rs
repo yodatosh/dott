@@ -149,7 +149,7 @@ pub async fn run(client: &Client) -> Result<(), String> {
     if !cfg!(feature = "self-update") {
         return Err("Self-updating is disabled in this build. Use your package manager to update dott.".into());
     }
-    let target = target().ok_or("Standalone updates support macOS and GNU Linux on Intel/ARM64. Update this installation from source; see README.md.")?;
+    let target = target().ok_or("Updates support macOS and GNU Linux on Intel/ARM64.")?;
     if !standalone(&path) {
         return Err("This copy of dott wasn't installed by the curl installer. Reinstall with: curl -fsSL https://raw.githubusercontent.com/yodatosh/dott/master/install.sh | sh".into());
     }

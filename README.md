@@ -12,18 +12,14 @@ Domain search for the terminal. Checks RDAP, WHOIS and DNS in parallel, straight
 ## Install
 
 ```sh
-# curl (macOS / GNU Linux) — installs to ~/.local/bin, or set DOTT_INSTALL_DIR
 curl -fsSL https://raw.githubusercontent.com/yodatosh/dott/master/install.sh | sh
-
-# From source (any OS, Rust 1.89+)
-cargo install --locked --git https://github.com/yodatosh/dott
 ```
 
-Alpine/musl users should build from source.
+Works on macOS and Linux (Intel and ARM); on Windows, run it inside WSL. Installs to `~/.local/bin`, or set `DOTT_INSTALL_DIR`.
 
 ## Update
 
-`dott --update` (or `/update` in interactive mode) downloads, verifies and swaps in the new binary. Source installs: rerun `cargo install`.
+`dott --update` (or `/update` in interactive mode) downloads, verifies and swaps in the new binary.
 
 Homebrew was dropped in 0.8.0 to keep things simple: one binary, one installer, one update path. Installed with brew before? Run `brew uninstall dott && brew untap yodatosh/dott`, then the curl line above.
 
