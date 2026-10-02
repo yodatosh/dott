@@ -484,7 +484,7 @@ fn print_help() {
     println!();
 }
 
-fn print_cat(active_tlds: Option<&[&str]>) {
+fn print_cat() {
     println!();
     println!("{}", "   ____       _   _ ".truecolor(255, 155, 0));
     println!("{}", "  |  _ \\  ___| |_| |_".truecolor(255, 60, 90));
@@ -494,17 +494,15 @@ fn print_cat(active_tlds: Option<&[&str]>) {
     println!();
     println!("{}", "  private domain search..".truecolor(80, 80, 110));
     println!("{}", "  type a name and hit enter. /help for commands · esc to quit.".truecolor(110, 105, 140));
-    println!("{}", extensions::summary(active_tlds));
     println!();
     println!();
 }
 
-// read a line with raw mode — handles typing, backspace, enter, esc/ctrl-c.
-// `typed` is text entered while the previous search was still running.
-fn read_input(prompt: &str, typed: &str) -> Option<String> {
-    let mut buf = typed.to_string();
+// read a line with raw mode — handles typing, backspace, enter, esc/ctrl-c
+fn read_input(prompt: &str) -> Option<String> {
+    let mut buf = String::new();
 
-    print!("{}{}", prompt, buf);
+    print!("{}", prompt);
     io::stdout().flush().unwrap();
 
     if let Err(error) = enable_raw_mode() {
@@ -544,15 +542,9 @@ fn read_input(prompt: &str, typed: &str) -> Option<String> {
     result
 }
 
-// Redraws the live prompt on the line under the result rows; the cursor must already be on it.
-fn paint_prompt(out: &mut io::Stdout, prompt: &str, typed: &str) {
-    let _ = execute!(out, cursor::MoveToColumn(0), Clear(ClearType::CurrentLine));
-    let _ = write!(out, "{prompt}{typed}");
-}
-
-// With a prompt (interactive mode), keys typed during the search stay on a live prompt line and
-// are returned as (text, enter pressed) so the next command can start before results finish.
-async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static str>, plain: bool, cache: Option<&Cache>, prompt: Option<&str>) -> (String, bool) {
+// In interactive mode the prompt only returns once results are in; keys pressed meanwhile are
+// swallowed so they can't scramble the rows or leak into the next search.
+async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static str>, plain: bool, cache: Option<&Cache>, interactive: bool) {
     // One permit per TLD so the whole set can fly in parallel — no second-batch wait.
     let sem = Arc::new(Semaphore::new(tld_list.len().max(1)));
 
@@ -564,7 +556,7 @@ async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static st
         for (domain, av) in &results {
             println!("{} {}", domain, av.as_str());
         }
-        return (String::new(), false);
+        return;
     }
 
     // Pin each TLD to a fixed row (tld_rank order, so .com is always on top) and stream
@@ -596,41 +588,18 @@ async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static st
     let io_lock = Arc::new(std::sync::Mutex::new(()));
     let done: Arc<Vec<AtomicBool>> = Arc::new((0..n).map(|_| AtomicBool::new(false)).collect());
     let spinning = Arc::new(AtomicBool::new(true));
-    let typed = Arc::new(std::sync::Mutex::new(String::new()));
-    let submitted = Arc::new(AtomicBool::new(false));
-    let prompt_s = prompt.unwrap_or("").to_string();
-
-    let reader = prompt.filter(|_| enable_raw_mode().is_ok()).map(|_| {
-        let (spinning, submitted, typed, io_lock, prompt_s) = (spinning.clone(), submitted.clone(), typed.clone(), io_lock.clone(), prompt_s.clone());
-        {
-            let _g = io_lock.lock().unwrap();
-            let mut out = io::stdout();
-            paint_prompt(&mut out, &prompt_s, "");
-            let _ = out.flush();
-        }
+    let swallowing = interactive && enable_raw_mode().is_ok();
+    let reader = swallowing.then(|| {
+        let spinning = spinning.clone();
         std::thread::spawn(move || {
-            while spinning.load(Ordering::Relaxed) && !submitted.load(Ordering::Relaxed) {
+            while spinning.load(Ordering::Relaxed) {
                 if !event::poll(Duration::from_millis(30)).unwrap_or(false) { continue; }
-                let Ok(Event::Key(key)) = event::read() else { continue };
-                if key.kind == event::KeyEventKind::Release { continue; }
-                let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-                if ctrl && key.code == KeyCode::Char('c') {
+                if let Ok(Event::Key(key)) = event::read()
+                    && key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
                     let _ = disable_raw_mode();
                     println!();
                     std::process::exit(130);
                 }
-                let _g = io_lock.lock().unwrap();
-                let mut text = typed.lock().unwrap();
-                match key.code {
-                    KeyCode::Enter => submitted.store(true, Ordering::Relaxed),
-                    KeyCode::Backspace => { text.pop(); }
-                    KeyCode::Esc => text.clear(),
-                    KeyCode::Char(c) if !ctrl => text.push(c),
-                    _ => {}
-                }
-                let mut out = io::stdout();
-                paint_prompt(&mut out, &prompt_s, &text);
-                let _ = out.flush();
             }
         })
     });
@@ -643,8 +612,6 @@ async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static st
         let io_lock = io_lock.clone();
         let tlds_t = tlds.clone();
         let name_t = name.to_string();
-        let typed = typed.clone();
-        let prompt_s = prompt_s.clone();
         tokio::spawn(async move {
             let mut frame = 0usize;
             while spinning.load(Ordering::Relaxed) {
@@ -671,7 +638,6 @@ async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static st
                     );
                     let _ = execute!(out, cursor::MoveToNextLine(up));
                 }
-                paint_prompt(&mut out, &prompt_s, &typed.lock().unwrap());
                 let _ = out.flush();
             }
         })
@@ -688,8 +654,6 @@ async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static st
         let io_lock = io_lock.clone();
         let done = done.clone();
         let prices = prices.clone();
-        let typed = typed.clone();
-        let prompt_s = prompt_s.clone();
         tokio::spawn(async move {
             let ((domain, av), prices) = tokio::join!(
                 check_domain_cached(client, name_s, tld, sem, cache), prices
@@ -707,7 +671,6 @@ async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static st
                 );
                 let _ = write!(out, "{}", final_line);
                 let _ = execute!(out, cursor::MoveToNextLine(up));
-                paint_prompt(&mut out, &prompt_s, &typed.lock().unwrap());
                 let _ = out.flush();
                 done[i].store(true, Ordering::Relaxed);
             }
@@ -726,7 +689,6 @@ async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static st
         let _ = reader.join();
         let _ = disable_raw_mode();
     }
-    paint_prompt(&mut io::stdout(), "", "");
 
     let available_count = results.iter()
         .filter(|(_, a)| matches!(a, Availability::Available))
@@ -747,8 +709,6 @@ async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static st
         "esc".truecolor(100, 95, 130), "quit".truecolor(70, 70, 90),
     );
     println!("{}", "  ─────────────────────────────────────────────────────".truecolor(38, 36, 52));
-    let text = typed.lock().unwrap().clone();
-    (text, submitted.load(Ordering::Relaxed))
 }
 
 async fn print_update(handle: tokio::task::JoinHandle<Option<String>>) {
@@ -1166,7 +1126,7 @@ async fn main() {
                 Err(error) => { eprintln!("dott: {error}"); std::process::exit(1); }
             };
             let tlds = search_tlds(explicit_tld, selected_tlds.as_deref());
-            search_and_print(&client, &name, tlds, true, None, None).await;
+            search_and_print(&client, &name, tlds, true, None, false).await;
         }
         return;
     }
@@ -1233,13 +1193,13 @@ async fn main() {
             Err(error) => { eprintln!("dott: {error}"); std::process::exit(1); }
         };
         let tld_list = search_tlds(explicit_tld, active_tlds.as_deref());
-        search_and_print(&client, &name, tld_list, plain, None, None).await;
+        search_and_print(&client, &name, tld_list, plain, None, false).await;
         if let Some(h) = update_check.take() { print_update(h).await; }
         return;
     }
 
     // ── interactive mode ───────────────────────────────────────
-    print_cat(active_tlds.as_deref());
+    print_cat();
     show_notices();
     std::thread::spawn(|| prepare_notifier(true));
     warm_up(&client, active_tlds.as_deref().unwrap_or(ALL_TLDS));
@@ -1250,16 +1210,12 @@ async fn main() {
 
     let cache = new_cache();
     let mut last_name: Option<String> = None;
-    let mut queued: Option<(String, bool)> = None;
 
     loop {
-        let prompt = format!("  {} ", "❯".bright_magenta().bold());
-        let line = match queued.take() {
-            Some((text, true)) => { println!("{prompt}{text}"); Some(text) }
-            Some((text, false)) => read_input(&prompt, &text),
-            None => read_input(&prompt, ""),
-        };
-        match line {
+        // three chevrons in the logo's first colors, orange → pink → purple
+        let prompt = format!("  {}{}{} ", "❯".truecolor(255, 155, 0).bold(), "❯".truecolor(255, 60, 90).bold(),
+            "❯".truecolor(180, 50, 230).bold());
+        match read_input(&prompt) {
             None => {
                 println!("\n  {}\n", farewell().truecolor(180, 140, 200));
                 if let Some(h) = update_check.take() { print_update(h).await; }
@@ -1341,7 +1297,6 @@ async fn main() {
                             if let Err(error) = extensions::save(&chosen) { eprintln!("dott: {error}"); }
                             warm_up(&client, &chosen);
                             active_tlds = Some(chosen);
-                            println!("{}\n", extensions::summary(active_tlds.as_deref()));
                         }
                         Ok(None) => {}
                         Err(error) => eprintln!("dott: Cannot open extension selector: {error}"),
@@ -1366,7 +1321,7 @@ async fn main() {
                     Err(error) => { eprintln!("dott: {error}"); continue; }
                 };
                 let tlds = search_tlds(explicit_tld, active_tlds.as_deref());
-                queued = Some(search_and_print(&client, &name, tlds, false, Some(&cache), Some(&prompt)).await);
+                search_and_print(&client, &name, tlds, false, Some(&cache), true).await;
                 last_name = Some(name);
 
                 println!();

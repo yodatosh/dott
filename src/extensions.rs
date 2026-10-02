@@ -61,14 +61,6 @@ fn save_at(path: &Path, tlds: &[&str]) -> io::Result<()> {
     result
 }
 
-pub fn summary(active: Option<&[&str]>) -> String {
-    let total = ALL_TLDS.len();
-    let count = match active {
-        Some(tlds) if tlds.len() < total => format!("{} of {total}", tlds.len()),
-        _ => format!("all {total}"),
-    };
-    format!("  {}", format!("/tlds to pick your extensions · {count} TLDs selected").truecolor(110, 105, 140))
-}
 
 #[derive(Debug, PartialEq)]
 enum Outcome {
@@ -349,14 +341,6 @@ mod tests {
         assert_eq!(lines.len(), buttons + 4);
     }
 
-    #[test]
-    fn summary_is_a_short_count() {
-        colored::control::set_override(false);
-        let total = ALL_TLDS.len();
-        assert_eq!(summary(Some(&["com", "io"])), format!("  /tlds to pick your extensions · 2 of {total} TLDs selected"));
-        assert_eq!(summary(None), format!("  /tlds to pick your extensions · all {total} TLDs selected"));
-        assert_eq!(summary(Some(ALL_TLDS)), format!("  /tlds to pick your extensions · all {total} TLDs selected"));
-    }
 
     #[test]
     fn saved_extensions_round_trip_and_bad_files_are_preserved() {
