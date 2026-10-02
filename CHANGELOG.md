@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.0 — Unreleased
+## 0.8.0 — 2026-10-02
 
 **New**
 - `/tlds`: choose which extensions bare-name searches and suggestions check, with
