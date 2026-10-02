@@ -56,7 +56,7 @@ class CliTests(unittest.TestCase):
         self.assertFalse((self.root / '.dott').exists())
         result = self.run_cli('--update')
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('original installation method', result.stderr)
+        self.assertIn('Reinstall with: curl', result.stderr)
 
     def test_corrupt_watchlist_is_preserved(self):
         folder = self.root / '.dott'

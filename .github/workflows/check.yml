@@ -25,6 +25,9 @@ jobs:
       - run: cargo test --locked
       - run: cargo test --locked --no-default-features
       - run: cargo build --locked
+      # The curl installer and its tests are for macOS and Linux only.
       - run: python3 -m unittest discover -s Tools -p 'test_*.py'
+        if: runner.os != 'Windows'
       - run: cargo build --locked --release
       - run: sh -n install.sh
+        if: runner.os != 'Windows'
