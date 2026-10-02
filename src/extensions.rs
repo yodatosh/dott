@@ -67,7 +67,7 @@ pub fn summary(active: Option<&[&str]>) -> String {
         Some(tlds) if tlds.len() < total => format!("{} of {total}", tlds.len()),
         _ => format!("all {total}"),
     };
-    format!("  {} {}", count.bright_white(), "extensions · /tlds".truecolor(80, 80, 100))
+    format!("  {}", format!("/tlds to pick your extensions · {count} TLDs selected").truecolor(110, 105, 140))
 }
 
 #[derive(Debug, PartialEq)]
@@ -353,9 +353,9 @@ mod tests {
     fn summary_is_a_short_count() {
         colored::control::set_override(false);
         let total = ALL_TLDS.len();
-        assert_eq!(summary(Some(&["com", "io"])), format!("  2 of {total} extensions · /tlds"));
-        assert_eq!(summary(None), format!("  all {total} extensions · /tlds"));
-        assert_eq!(summary(Some(ALL_TLDS)), format!("  all {total} extensions · /tlds"));
+        assert_eq!(summary(Some(&["com", "io"])), format!("  /tlds to pick your extensions · 2 of {total} TLDs selected"));
+        assert_eq!(summary(None), format!("  /tlds to pick your extensions · all {total} TLDs selected"));
+        assert_eq!(summary(Some(ALL_TLDS)), format!("  /tlds to pick your extensions · all {total} TLDs selected"));
     }
 
     #[test]

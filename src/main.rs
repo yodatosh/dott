@@ -129,8 +129,9 @@ fn parse_whois(response: &str, tld: &str) -> Availability {
         return Availability::Available;
     }
     // check Taken first: CentralNic's .co footer contains the word "available"
-    // in boilerplate, which otherwise tripped the Available heuristic.
-    if lower.contains("domain name:") || lower.contains("domain:") {
+    // in boilerplate, which otherwise tripped the Available heuristic. Only a record field at the
+    // start of a line counts, so footers or rate-limit text mentioning "domain:" can't match.
+    if lower.lines().any(|l| { let l = l.trim_start(); l.starts_with("domain name:") || l.starts_with("domain:") }) {
         let dates = if tld == "gg" {
             // whois.gg is "registered until cancelled" — no expiry published.
             // registration date is prose: "Registered on 26th February 2015".
@@ -198,6 +199,9 @@ async fn http_query(client: &Client, url: &str, sem: &Semaphore) -> Option<Avail
     match client.get(url).header("User-Agent", "Mozilla/5.0").header("Accept", "application/json").timeout(Duration::from_secs(5)).send().await {
         Ok(resp) => {
             let status = resp.status().as_u16();
+            // rdap.org answers 404 itself when it knows no RDAP server for a TLD ("No RDAP service
+            // is available"); only a registry's own 404 means the name isn't registered.
+            let from_bootstrap = resp.url().host_str() == Some("rdap.org");
             let body = resp.text().await.unwrap_or_default();
             Some(match status {
                 200 => {
@@ -232,7 +236,7 @@ async fn http_query(client: &Client, url: &str, sem: &Semaphore) -> Option<Avail
                 404 => {
                     if body.to_ascii_lowercase().contains("blocked") {
                         Availability::Protected
-                    } else if serde_json::from_str::<serde_json::Value>(&body).ok()
+                    } else if !from_bootstrap && serde_json::from_str::<serde_json::Value>(&body).ok()
                         .is_some_and(|j| j["errorCode"].as_u64() == Some(404)) {
                         Availability::Available
                     } else {
@@ -436,10 +440,6 @@ fn warm_up(client: &Client, tlds: &[&'static str]) {
     }
 }
 
-fn print_price_note() {
-    println!("  {}", "Porkbun · USD · standard yearly estimates; premium names and checkout totals may differ.".truecolor(80, 80, 100));
-}
-
 fn farewell() -> String {
     let keys = if cfg!(windows) {
         ["USERNAME", "USER", "LOGNAME"]
@@ -484,7 +484,7 @@ fn print_help() {
     println!();
 }
 
-fn print_cat() {
+fn print_cat(active_tlds: Option<&[&str]>) {
     println!();
     println!("{}", "   ____       _   _ ".truecolor(255, 155, 0));
     println!("{}", "  |  _ \\  ___| |_| |_".truecolor(255, 60, 90));
@@ -494,15 +494,17 @@ fn print_cat() {
     println!();
     println!("{}", "  private domain search..".truecolor(80, 80, 110));
     println!("{}", "  type a name and hit enter. /help for commands · esc to quit.".truecolor(110, 105, 140));
+    println!("{}", extensions::summary(active_tlds));
     println!();
     println!();
 }
 
-// read a line with raw mode — handles typing, backspace, enter, esc/ctrl-c
-fn read_input(prompt: &str) -> Option<String> {
-    let mut buf = String::new();
+// read a line with raw mode — handles typing, backspace, enter, esc/ctrl-c.
+// `typed` is text entered while the previous search was still running.
+fn read_input(prompt: &str, typed: &str) -> Option<String> {
+    let mut buf = typed.to_string();
 
-    print!("{}", prompt);
+    print!("{}{}", prompt, buf);
     io::stdout().flush().unwrap();
 
     if let Err(error) = enable_raw_mode() {
@@ -542,7 +544,15 @@ fn read_input(prompt: &str) -> Option<String> {
     result
 }
 
-async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static str>, plain: bool, cache: Option<&Cache>) {
+// Redraws the live prompt on the line under the result rows; the cursor must already be on it.
+fn paint_prompt(out: &mut io::Stdout, prompt: &str, typed: &str) {
+    let _ = execute!(out, cursor::MoveToColumn(0), Clear(ClearType::CurrentLine));
+    let _ = write!(out, "{prompt}{typed}");
+}
+
+// With a prompt (interactive mode), keys typed during the search stay on a live prompt line and
+// are returned as (text, enter pressed) so the next command can start before results finish.
+async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static str>, plain: bool, cache: Option<&Cache>, prompt: Option<&str>) -> (String, bool) {
     // One permit per TLD so the whole set can fly in parallel — no second-batch wait.
     let sem = Arc::new(Semaphore::new(tld_list.len().max(1)));
 
@@ -554,7 +564,7 @@ async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static st
         for (domain, av) in &results {
             println!("{} {}", domain, av.as_str());
         }
-        return;
+        return (String::new(), false);
     }
 
     // Pin each TLD to a fixed row (tld_rank order, so .com is always on top) and stream
@@ -586,6 +596,44 @@ async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static st
     let io_lock = Arc::new(std::sync::Mutex::new(()));
     let done: Arc<Vec<AtomicBool>> = Arc::new((0..n).map(|_| AtomicBool::new(false)).collect());
     let spinning = Arc::new(AtomicBool::new(true));
+    let typed = Arc::new(std::sync::Mutex::new(String::new()));
+    let submitted = Arc::new(AtomicBool::new(false));
+    let prompt_s = prompt.unwrap_or("").to_string();
+
+    let reader = prompt.filter(|_| enable_raw_mode().is_ok()).map(|_| {
+        let (spinning, submitted, typed, io_lock, prompt_s) = (spinning.clone(), submitted.clone(), typed.clone(), io_lock.clone(), prompt_s.clone());
+        {
+            let _g = io_lock.lock().unwrap();
+            let mut out = io::stdout();
+            paint_prompt(&mut out, &prompt_s, "");
+            let _ = out.flush();
+        }
+        std::thread::spawn(move || {
+            while spinning.load(Ordering::Relaxed) && !submitted.load(Ordering::Relaxed) {
+                if !event::poll(Duration::from_millis(30)).unwrap_or(false) { continue; }
+                let Ok(Event::Key(key)) = event::read() else { continue };
+                if key.kind == event::KeyEventKind::Release { continue; }
+                let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+                if ctrl && key.code == KeyCode::Char('c') {
+                    let _ = disable_raw_mode();
+                    println!();
+                    std::process::exit(130);
+                }
+                let _g = io_lock.lock().unwrap();
+                let mut text = typed.lock().unwrap();
+                match key.code {
+                    KeyCode::Enter => submitted.store(true, Ordering::Relaxed),
+                    KeyCode::Backspace => { text.pop(); }
+                    KeyCode::Esc => text.clear(),
+                    KeyCode::Char(c) if !ctrl => text.push(c),
+                    _ => {}
+                }
+                let mut out = io::stdout();
+                paint_prompt(&mut out, &prompt_s, &text);
+                let _ = out.flush();
+            }
+        })
+    });
 
     // Tick task: every 80ms, repaint each still-pending row with the next spinner frame.
     // Skips rows that have flipped done[i], so finished rows never flicker.
@@ -595,6 +643,8 @@ async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static st
         let io_lock = io_lock.clone();
         let tlds_t = tlds.clone();
         let name_t = name.to_string();
+        let typed = typed.clone();
+        let prompt_s = prompt_s.clone();
         tokio::spawn(async move {
             let mut frame = 0usize;
             while spinning.load(Ordering::Relaxed) {
@@ -621,6 +671,7 @@ async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static st
                     );
                     let _ = execute!(out, cursor::MoveToNextLine(up));
                 }
+                paint_prompt(&mut out, &prompt_s, &typed.lock().unwrap());
                 let _ = out.flush();
             }
         })
@@ -637,6 +688,8 @@ async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static st
         let io_lock = io_lock.clone();
         let done = done.clone();
         let prices = prices.clone();
+        let typed = typed.clone();
+        let prompt_s = prompt_s.clone();
         tokio::spawn(async move {
             let ((domain, av), prices) = tokio::join!(
                 check_domain_cached(client, name_s, tld, sem, cache), prices
@@ -654,6 +707,7 @@ async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static st
                 );
                 let _ = write!(out, "{}", final_line);
                 let _ = execute!(out, cursor::MoveToNextLine(up));
+                paint_prompt(&mut out, &prompt_s, &typed.lock().unwrap());
                 let _ = out.flush();
                 done[i].store(true, Ordering::Relaxed);
             }
@@ -668,6 +722,11 @@ async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static st
 
     spinning.store(false, Ordering::Relaxed);
     let _ = tick_handle.await;
+    if let Some(reader) = reader {
+        let _ = reader.join();
+        let _ = disable_raw_mode();
+    }
+    paint_prompt(&mut io::stdout(), "", "");
 
     let available_count = results.iter()
         .filter(|(_, a)| matches!(a, Availability::Available))
@@ -679,7 +738,6 @@ async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static st
         available_count.to_string().bright_green().bold(),
         n.to_string().truecolor(80, 80, 100),
     );
-    if available_count > 0 { print_price_note(); }
     println!("{}", "  ─────────────────────────────────────────────────────".truecolor(38, 36, 52));
     println!(
         "  {}  {}    {}  {}    {}  {}    {}  {}",
@@ -689,6 +747,8 @@ async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static st
         "esc".truecolor(100, 95, 130), "quit".truecolor(70, 70, 90),
     );
     println!("{}", "  ─────────────────────────────────────────────────────".truecolor(38, 36, 52));
+    let text = typed.lock().unwrap().clone();
+    (text, submitted.load(Ordering::Relaxed))
 }
 
 async fn print_update(handle: tokio::task::JoinHandle<Option<String>>) {
@@ -1068,9 +1128,11 @@ async fn cmd_background_check(client: &Client) -> Result<(), String> {
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
-    #[cfg(target_os = "macos")]
     if let Some(args) = &cli.notify {
+        #[cfg(target_os = "macos")]
         finish_command(notify::deliver(&args[0], &args[1]));
+        #[cfg(not(target_os = "macos"))]
+        { let _ = args; finish_command(Err("notifications are only supported on macOS".into())); }
         return;
     }
     if cli.pending { print_pending(); return; }
@@ -1104,7 +1166,7 @@ async fn main() {
                 Err(error) => { eprintln!("dott: {error}"); std::process::exit(1); }
             };
             let tlds = search_tlds(explicit_tld, selected_tlds.as_deref());
-            search_and_print(&client, &name, tlds, true, None).await;
+            search_and_print(&client, &name, tlds, true, None, None).await;
         }
         return;
     }
@@ -1152,8 +1214,8 @@ async fn main() {
             println!("  {} nothing available\n", "✗".truecolor(80, 80, 100));
         } else {
             let prices = prices.as_ref().expect("Terminal output has a pricing catalog");
-            for d in &available { println!("{}", format_result(d, &Availability::Available, 0, prices)); }
-            print_price_note();
+            let pad = available.iter().map(|d| d.len()).max().unwrap_or(0);
+            for d in &available { println!("{}", format_result(d, &Availability::Available, pad, prices)); }
             println!("\n  {} available\n", available.len().to_string().bright_green().bold());
         }
         if let Some(h) = update_check.take() { print_update(h).await; }
@@ -1171,16 +1233,15 @@ async fn main() {
             Err(error) => { eprintln!("dott: {error}"); std::process::exit(1); }
         };
         let tld_list = search_tlds(explicit_tld, active_tlds.as_deref());
-        search_and_print(&client, &name, tld_list, plain, None).await;
+        search_and_print(&client, &name, tld_list, plain, None, None).await;
         if let Some(h) = update_check.take() { print_update(h).await; }
         return;
     }
 
     // ── interactive mode ───────────────────────────────────────
-    print_cat();
+    print_cat(active_tlds.as_deref());
     show_notices();
     std::thread::spawn(|| prepare_notifier(true));
-    println!("{}\n", extensions::summary(active_tlds.as_deref()));
     warm_up(&client, active_tlds.as_deref().unwrap_or(ALL_TLDS));
     tokio::spawn({
         let client = client.clone();
@@ -1189,10 +1250,16 @@ async fn main() {
 
     let cache = new_cache();
     let mut last_name: Option<String> = None;
+    let mut queued: Option<(String, bool)> = None;
 
     loop {
-        let prompt = format!("  {} ", "›".bright_magenta().bold());
-        match read_input(&prompt) {
+        let prompt = format!("  {} ", "❯".bright_magenta().bold());
+        let line = match queued.take() {
+            Some((text, true)) => { println!("{prompt}{text}"); Some(text) }
+            Some((text, false)) => read_input(&prompt, &text),
+            None => read_input(&prompt, ""),
+        };
+        match line {
             None => {
                 println!("\n  {}\n", farewell().truecolor(180, 140, 200));
                 if let Some(h) = update_check.take() { print_update(h).await; }
@@ -1224,7 +1291,8 @@ async fn main() {
                         }
                     };
                     println!("  {} {}", "suggesting for:".truecolor(80, 80, 100), name.bright_white());
-                    let suggestions = generate_suggestions(std::slice::from_ref(&name));
+                    // the name itself was just searched; only show new variants
+                    let suggestions: Vec<String> = generate_suggestions(std::slice::from_ref(&name)).into_iter().filter(|n| *n != name).collect();
                     let tlds = active_tlds.clone().unwrap_or_else(|| vec!["com", "io", "dev", "app", "co"]);
                     let sem = Arc::new(Semaphore::new(10));
                     let tasks: Vec<_> = suggestions.iter().flat_map(|n| {
@@ -1243,11 +1311,11 @@ async fn main() {
                     if available.is_empty() {
                         println!("  {}  nothing available\n", "✗".truecolor(80, 80, 100));
                     } else {
+                        let pad = available.iter().map(|d| d.len()).max().unwrap_or(0);
                         for d in &available {
-                            println!("{}", format_result(d, &Availability::Available, 0, &prices));
+                            println!("{}", format_result(d, &Availability::Available, pad, &prices));
                         }
                         println!();
-                        print_price_note();
                         println!("  {} available\n", available.len().to_string().bright_green().bold());
                     }
                     try_print_update_if_ready(&mut update_check).await;
@@ -1298,7 +1366,7 @@ async fn main() {
                     Err(error) => { eprintln!("dott: {error}"); continue; }
                 };
                 let tlds = search_tlds(explicit_tld, active_tlds.as_deref());
-                search_and_print(&client, &name, tlds, false, Some(&cache)).await;
+                queued = Some(search_and_print(&client, &name, tlds, false, Some(&cache), Some(&prompt)).await);
                 last_name = Some(name);
 
                 println!();
@@ -1319,6 +1387,20 @@ fn finish_command(result: Result<(), String>) {
 mod tests {
     use super::*;
 
+    // Mock servers give up after 10s instead of waiting forever for a client that never connects.
+    fn accept(listener: &std::net::TcpListener) -> std::net::TcpStream {
+        listener.set_nonblocking(true).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            match listener.accept() {
+                Ok((stream, _)) => { stream.set_nonblocking(false).unwrap(); return stream; }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock && std::time::Instant::now() < deadline =>
+                    std::thread::sleep(Duration::from_millis(10)),
+                Err(e) => panic!("mock server got no connection: {e}"),
+            }
+        }
+    }
+
     #[test]
     fn full_domains_and_tld_lists_are_normalized_and_validated() {
         assert_eq!(parse_search(" MyName.IO ").unwrap(), ("myname".into(), Some("io")));
@@ -1334,6 +1416,159 @@ mod tests {
         assert_eq!(search_tlds(None, None), ALL_TLDS.to_vec());
         assert!(valid_label(&"a".repeat(63)));
         assert!(!valid_label(&"a".repeat(64)));
+    }
+
+    // First lines of real WHOIS replies (2026-10-02): nic.<tld> is registered, the random name is free.
+    const WHOIS_REPLIES: &[(&str, &str, bool)] = &[
+        ("com", r#"Domain Name: NIC.COM
+Registry Domain ID: 91988_DOMAIN_COM-VRSN
+Registrar WHOIS Server: whois.networksolutions.com
+Registrar URL: http://networksolutions.com"#, true),
+        ("com", r#"No match for "ZQ7X9K2MVB4TQW1P.COM".
+>>> Last update of whois database: 2026-10-02T01:36:43Z <<<
+NOTICE: The expiration date displayed in this record is the date the
+registrar's sponsorship of the domain name registration in the registry is"#, false),
+        ("net", r#"Domain Name: NIC.NET
+Registry Domain ID: 2707346_DOMAIN_NET-VRSN
+Registrar WHOIS Server: whois.domain.com
+Registrar URL: http://www.domain.com"#, true),
+        ("net", r#"No match for "ZQ7X9K2MVB4TQW1P.NET".
+>>> Last update of whois database: 2026-10-02T01:36:43Z <<<
+NOTICE: The expiration date displayed in this record is the date the
+registrar's sponsorship of the domain name registration in the registry is"#, false),
+        ("org", r#"Domain Name: nic.org
+Registry Domain ID: REDACTED
+Registrar WHOIS Server: whois.namecheap.com
+Registrar URL: http://www.namecheap.com"#, true),
+        ("org", r#"Domain not found.
+>>> Last update of WHOIS database: 2026-10-02T01:37:00Z <<<
+Terms of Use: Access to Public Interest Registry WHOIS information is provided to assist persons in determining the contents of a domain name registration record in the Public Interest Registry registry database. The data in this record is provided by Public Interest Registry for informational purposes only, and Public Interest Registry does not guarantee its accuracy. This service is intended only for query-based access. You agree that you will use this data only for lawful purposes and that, under no circumstances will you use this data to (a) allow, enable, or otherwise support the transmission by e-mail, telephone, or facsimile of mass unsolicited, commercial advertising or solicitations to entities other than the data recipient's own existing customers; or (b) enable high volume, automated, electronic processes that send queries or data to the systems of Registry Operator, a Registrar, or Identity Digital except as reasonably necessary to register domain names or modify existing registrations. All rights reserved. Public Interest Registry reserves the right to modify these terms at any time. By submitting this query, you agree to abide by this policy.  The Registrar of Record identified in this output may have an RDDS service that can be queried for additional information on how to contact the Registrant, Admin, or Tech contact of the queried domain name."#, false),
+        ("io", r#"This domain is protected by the Registry Lock service. If you are the registrant and wish to take action on this lock, please contact your registrar.
+Domain Name: nic.io
+Registry Domain ID: REDACTED
+Registrar WHOIS Server: whois.identitydigital.services"#, true),
+        ("io", r#"Domain not found.
+>>> Last update of WHOIS database: 2026-10-02T01:37:05Z <<<
+Terms of Use: Access to WHOIS information is provided to assist persons in determining the contents of a domain name registration record in the registry database. The data in this record is provided by Identity Digital or the Registry Operator for informational purposes only, and accuracy is not guaranteed. This service is intended only for query-based access. You agree that you will use this data only for lawful purposes and that, under no circumstances will you use this data to (a) allow, enable, or otherwise support the transmission by e-mail, telephone, or facsimile of mass unsolicited, commercial advertising or solicitations to entities other than the data recipient's own existing customers; or (b) enable high volume, automated, electronic processes that send queries or data to the systems of Registry Operator, a Registrar, or Identity Digital except as reasonably necessary to register domain names or modify existing registrations. When using the Whois service, please consider the following: The Whois service is not a replacement for standard EPP commands to the SRS service. Whois is not considered authoritative for registered domain objects. The Whois service may be scheduled for downtime during production or OT&E maintenance periods. Queries to the Whois services are throttled. If too many queries are received from a single IP address within a specified time, the service will begin to reject further queries for a period of time to prevent disruption of Whois service access. Abuse of the Whois system through data mining is mitigated by detecting and limiting bulk query access from single sources. Where applicable, the presence of a [Non-Public Data] tag indicates that such data is not made publicly available due to applicable data privacy laws or requirements. Should you wish to contact the registrant, please refer to the Whois records available through the registrar URL listed above. Access to non-public data may be provided, upon request, where it can be reasonably confirmed that the requester holds a specific legitimate interest and a proper legal basis for accessing the withheld data. Access to this data provided by Identity Digital can be requested by submitting a request via the form found at https://www.identity.digital/about/policies/whois-layered-access/. The Registrar of Record identified in this output may have an RDDS service that can be queried for additional information on how to contact the Registrant, Admin, or Tech contact of the queried domain name. Identity Digital Inc. and Registry Operator reserve the right to modify these terms at any time. By submitting this query, you agree to abide by this policy."#, false),
+        ("co", r#"Domain Name: NIC.CO
+Registry Domain ID: D30230624-CNIC
+Registrar WHOIS Server: whois.registry.co
+Registrar URL: https://registry.co/"#, true),
+        ("co", r#"The queried object does not exist: DOMAIN NOT FOUND
+>>> Last update of WHOIS database: 2026-10-02T01:37:14.0Z <<<"#, false),
+        ("ai", r#"This domain is protected by the Registry Lock service. If you are the registrant and wish to take action on this lock, please contact your registrar.
+Domain Name: nic.ai
+Registry Domain ID: 5ff032b7dd2f49d899c246a6937ea818-DONUTS
+Registrar WHOIS Server: whois.identitydigital.services"#, true),
+        ("ai", r#"Domain not found.
+>>> Last update of WHOIS database: 2026-10-02T01:37:19Z <<<
+Terms of Use: Access to WHOIS information is provided to assist persons in determining the contents of a domain name registration record in the registry database. The data in this record is provided by Identity Digital or the Registry Operator for informational purposes only, and accuracy is not guaranteed. This service is intended only for query-based access. You agree that you will use this data only for lawful purposes and that, under no circumstances will you use this data to (a) allow, enable, or otherwise support the transmission by e-mail, telephone, or facsimile of mass unsolicited, commercial advertising or solicitations to entities other than the data recipient's own existing customers; or (b) enable high volume, automated, electronic processes that send queries or data to the systems of Registry Operator, a Registrar, or Identity Digital except as reasonably necessary to register domain names or modify existing registrations. When using the Whois service, please consider the following: The Whois service is not a replacement for standard EPP commands to the SRS service. Whois is not considered authoritative for registered domain objects. The Whois service may be scheduled for downtime during production or OT&E maintenance periods. Queries to the Whois services are throttled. If too many queries are received from a single IP address within a specified time, the service will begin to reject further queries for a period of time to prevent disruption of Whois service access. Abuse of the Whois system through data mining is mitigated by detecting and limiting bulk query access from single sources. Where applicable, the presence of a [Non-Public Data] tag indicates that such data is not made publicly available due to applicable data privacy laws or requirements. Should you wish to contact the registrant, please refer to the Whois records available through the registrar URL listed above. Access to non-public data may be provided, upon request, where it can be reasonably confirmed that the requester holds a specific legitimate interest and a proper legal basis for accessing the withheld data. Access to this data provided by Identity Digital can be requested by submitting a request via the form found at https://www.identity.digital/about/policies/whois-layered-access/. The Registrar of Record identified in this output may have an RDDS service that can be queried for additional information on how to contact the Registrant, Admin, or Tech contact of the queried domain name. Identity Digital Inc. and Registry Operator reserve the right to modify these terms at any time. By submitting this query, you agree to abide by this policy."#, false),
+        ("me", r#"This domain is protected by the Registry Lock service. If you are the registrant and wish to take action on this lock, please contact your registrar.
+Domain Name: nic.me
+Registry Domain ID: REDACTED
+Registrar WHOIS Server: whois.identitydigital.services"#, true),
+        ("me", r#"Domain not found.
+>>> Last update of WHOIS database: 2026-10-02T01:37:24Z <<<
+Terms of Use: Access to WHOIS information is provided to assist persons in determining the contents of a domain name registration record in the registry database. The data in this record is provided by Identity Digital or the Registry Operator for informational purposes only, and accuracy is not guaranteed. This service is intended only for query-based access. You agree that you will use this data only for lawful purposes and that, under no circumstances will you use this data to (a) allow, enable, or otherwise support the transmission by e-mail, telephone, or facsimile of mass unsolicited, commercial advertising or solicitations to entities other than the data recipient's own existing customers; or (b) enable high volume, automated, electronic processes that send queries or data to the systems of Registry Operator, a Registrar, or Identity Digital except as reasonably necessary to register domain names or modify existing registrations. When using the Whois service, please consider the following: The Whois service is not a replacement for standard EPP commands to the SRS service. Whois is not considered authoritative for registered domain objects. The Whois service may be scheduled for downtime during production or OT&E maintenance periods. Queries to the Whois services are throttled. If too many queries are received from a single IP address within a specified time, the service will begin to reject further queries for a period of time to prevent disruption of Whois service access. Abuse of the Whois system through data mining is mitigated by detecting and limiting bulk query access from single sources. Where applicable, the presence of a [Non-Public Data] tag indicates that such data is not made publicly available due to applicable data privacy laws or requirements. Should you wish to contact the registrant, please refer to the Whois records available through the registrar URL listed above. Access to non-public data may be provided, upon request, where it can be reasonably confirmed that the requester holds a specific legitimate interest and a proper legal basis for accessing the withheld data. Access to this data provided by Identity Digital can be requested by submitting a request via the form found at https://www.identity.digital/about/policies/whois-layered-access/. The Registrar of Record identified in this output may have an RDDS service that can be queried for additional information on how to contact the Registrant, Admin, or Tech contact of the queried domain name. Identity Digital Inc. and Registry Operator reserve the right to modify these terms at any time. By submitting this query, you agree to abide by this policy."#, false),
+        ("so", r#"Domain Name: nic.so
+Registry Domain ID: 31099-sonic
+Updated Date: 2024-07-14T07:04:38Z
+Creation Date: 2010-10-31T00:00:00Z"#, true),
+        ("so", r#"Domain Name: zq7x9k2mvb4tqw1p.so
+The queried object does not exist: No Object Found
+>>> Last update of WHOIS database: 2026-10-02T01:32:34.064Z <<<
+TERMS OF USE: You are not authorized to access or query our WHOIS database through the use of electronic processes that are high-volume and automated.  This WHOIS database is provided by as a service to the internet community."#, false),
+        ("gg", r#"Domain:
+nic.gg
+Domain Status:
+Active"#, true),
+        ("gg", r#"NOT FOUND"#, false),
+        ("cc", r#"Domain Name: NIC.CC
+Registry Domain ID: 86413629_DOMAIN_CC-VRSN
+Registrar WHOIS Server: whois.corporatedomains.com
+Registrar URL: http://cscdbs.com"#, true),
+        ("cc", r#"No match for "ZQ7X9K2MVB4TQW1P.CC".
+>>> Last update of WHOIS database: 2026-10-02T01:37:24Z <<<
+NOTICE: The expiration date displayed in this record is the date the
+registrar's sponsorship of the domain name registration in the registry is"#, false),
+        ("xyz", r#"Domain Name: NIC.XYZ
+Registry Domain ID: D1465615-CNIC
+Registrar WHOIS Server: whois.nic.xyz
+Registrar URL: https://gen.xyz/"#, true),
+        ("xyz", r#"The queried object does not exist: DOMAIN NOT FOUND
+>>> Last update of WHOIS database: 2026-10-02T01:37:42.0Z <<<"#, false),
+        ("sh", r#"This domain is protected by the Registry Lock service. If you are the registrant and wish to take action on this lock, please contact your registrar.
+Domain Name: nic.sh
+Registry Domain ID: REDACTED
+Registrar WHOIS Server: whois.identitydigital.services"#, true),
+        ("sh", r#"Domain not found.
+>>> Last update of WHOIS database: 2026-10-02T01:37:51Z <<<
+Terms of Use: Access to WHOIS information is provided to assist persons in determining the contents of a domain name registration record in the registry database. The data in this record is provided by Identity Digital or the Registry Operator for informational purposes only, and accuracy is not guaranteed. This service is intended only for query-based access. You agree that you will use this data only for lawful purposes and that, under no circumstances will you use this data to (a) allow, enable, or otherwise support the transmission by e-mail, telephone, or facsimile of mass unsolicited, commercial advertising or solicitations to entities other than the data recipient's own existing customers; or (b) enable high volume, automated, electronic processes that send queries or data to the systems of Registry Operator, a Registrar, or Identity Digital except as reasonably necessary to register domain names or modify existing registrations. When using the Whois service, please consider the following: The Whois service is not a replacement for standard EPP commands to the SRS service. Whois is not considered authoritative for registered domain objects. The Whois service may be scheduled for downtime during production or OT&E maintenance periods. Queries to the Whois services are throttled. If too many queries are received from a single IP address within a specified time, the service will begin to reject further queries for a period of time to prevent disruption of Whois service access. Abuse of the Whois system through data mining is mitigated by detecting and limiting bulk query access from single sources. Where applicable, the presence of a [Non-Public Data] tag indicates that such data is not made publicly available due to applicable data privacy laws or requirements. Should you wish to contact the registrant, please refer to the Whois records available through the registrar URL listed above. Access to non-public data may be provided, upon request, where it can be reasonably confirmed that the requester holds a specific legitimate interest and a proper legal basis for accessing the withheld data. Access to this data provided by Identity Digital can be requested by submitting a request via the form found at https://www.identity.digital/about/policies/whois-layered-access/. The Registrar of Record identified in this output may have an RDDS service that can be queried for additional information on how to contact the Registrant, Admin, or Tech contact of the queried domain name. Identity Digital Inc. and Registry Operator reserve the right to modify these terms at any time. By submitting this query, you agree to abide by this policy."#, false),
+        ("fm", r#"Domain Name: NIC.FM
+Registry Domain ID: D34891389-CNIC
+Registrar WHOIS Server: whois.nic.fm
+Registrar URL: https://brsmedia.fm"#, true),
+        ("fm", r#"The queried object does not exist: DOMAIN NOT FOUND
+>>> Last update of WHOIS database: 2026-10-02T01:37:55.0Z <<<"#, false),
+    ];
+
+    #[test]
+    fn real_whois_replies_from_every_server_are_classified_correctly() {
+        for (tld, reply, registered) in WHOIS_REPLIES {
+            let result = parse_whois(reply, tld);
+            if *registered {
+                assert!(matches!(result, Availability::Taken(_)), "{tld} registered → {:?}\n{reply}", result.as_str());
+            } else {
+                assert!(matches!(result, Availability::Available), "{tld} free → {:?}\n{reply}", result.as_str());
+            }
+        }
+    }
+
+    #[test]
+    fn whois_text_mentioning_domain_mid_line_is_not_a_record() {
+        let limited = "Query rate exceeded for domain: example.io. Try again later.";
+        assert!(matches!(parse_whois(limited, "io"), Availability::Unknown));
+        assert!(matches!(parse_whois("WHOIS LIMIT EXCEEDED - SEE WWW.PIR.ORG/WHOIS FOR DETAILS", "org"), Availability::Unknown));
+    }
+
+    // Serves one HTTP response to whatever connects, returning the client-facing URL.
+    fn one_response(host: &str, status: &str, body: &'static str) -> (String, std::net::SocketAddr, std::thread::JoinHandle<()>) {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let response = format!("HTTP/1.1 {status}\r\nContent-Type: application/rdap+json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+        let server = std::thread::spawn(move || {
+            let mut connection = accept(&listener);
+            connection.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+            let mut request = [0; 1024];
+            let _ = connection.read(&mut request);
+            connection.write_all(response.as_bytes()).unwrap();
+        });
+        (format!("http://{host}:{}/domain/nic.co", addr.port()), addr, server)
+    }
+
+    #[tokio::test]
+    async fn rdap_org_no_service_404_is_not_availability() {
+        // rdap.org's real reply for TLDs it can't route (seen for .co, .so, .gg, .sh, .io).
+        let no_service = r#"{"rdapConformance":["rdap_level_0"],"lang":"en","errorCode":404,"title":"No RDAP service is available for this resource"}"#;
+        let (url, addr, server) = one_response("rdap.org", "404 Not Found", no_service);
+        let client = Client::builder().no_proxy().resolve("rdap.org", addr).build().unwrap();
+        let result = http_query(&client, &url, &Semaphore::new(1)).await;
+        server.join().unwrap();
+        assert!(matches!(result, Some(Availability::Unknown)), "got {:?}", result.map(|r| r.as_str()));
+
+        // The same 404 from a registry's own server does mean the name is free.
+        let (url, _, server) = one_response("127.0.0.1", "404 Not Found", r#"{"errorCode":404,"title":"Not Found"}"#);
+        let result = http_query(&Client::builder().no_proxy().build().unwrap(), &url, &Semaphore::new(1)).await;
+        server.join().unwrap();
+        assert!(matches!(result, Some(Availability::Available)));
+    }
+
+    #[test]
+    fn extensions_without_working_rdap_use_whois() {
+        assert_eq!(rdap_url("nic", "co"), None);
+        assert!(whois_server("co").is_some());
+        assert_eq!(rdap_url("nic", "so").as_deref(), Some("https://rdap.nic.so/domain/nic.so"));
     }
 
     #[test]
@@ -1399,10 +1634,10 @@ mod tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}/domain/example.com", listener.local_addr().unwrap());
         let server = std::thread::spawn(move || {
-            let (mut connection, _) = listener.accept().unwrap();
+            let mut connection = accept(&listener);
             connection.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
             let mut request = [0; 1024];
-            connection.read(&mut request).unwrap();
+            let _ = connection.read(&mut request).unwrap();
             connection.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}").unwrap();
         });
         let result = http_query(&Client::builder().no_proxy().build().unwrap(), &url, &Semaphore::new(1)).await;
@@ -1501,7 +1736,7 @@ mod tests {
         assert_eq!(warm_origins(&["sh", "gg"]), vec!["https://cloudflare-dns.com/"], "WHOIS-only extensions");
         let all = warm_origins(ALL_TLDS);
         assert!(all.iter().all(|o| o.ends_with(".com/") || o.ends_with(".org/") || o.ends_with(".services/")
-            || o.ends_with(".google/") || o.ends_with(".cv/") || o.ends_with(".uk/")), "{all:?}");
+            || o.ends_with(".google/") || o.ends_with(".cv/") || o.ends_with(".uk/") || o.ends_with(".so/")), "{all:?}");
         assert!(all.iter().all(|o| !o.contains("domain")));
     }
 

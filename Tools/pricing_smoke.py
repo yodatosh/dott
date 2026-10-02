@@ -41,7 +41,7 @@ def main():
             return output.decode(errors='replace')
 
         output = terminal()
-        assert 'Porkbun' in output and 'est $' in output and 'renew/yr' in output, output
+        assert 'porkbun' in output and '$' in output and 'renew' not in output, output
         data = json.loads(cache.read_text())
         assert 'com' in data['prices'] and 'org' in data['prices'], data
         print(f'Live Porkbun fetch and terminal estimates passed: {len(data["prices"])} supported TLD prices.', flush=True)
@@ -57,14 +57,14 @@ def main():
         cache.write_text(json.dumps(data))
         original = cache.read_bytes()
         output = terminal()
-        assert 'cached' in output and 'est $' in output, output
+        assert 'cached' in output and 'porkbun' in output, output
         assert cache.read_bytes() == original
         print('Saved-price fallback is labeled cached and does not retry a recent failed attempt.', flush=True)
         plain = subprocess.run([str(binary), name, '--tlds', 'com,org', '--plain'],
                                env=env, text=True, capture_output=True, timeout=90)
         assert plain.returncode == 0 and plain.stderr == '', plain
         assert len(plain.stdout.splitlines()) == 2
-        assert 'est $' not in plain.stdout and 'Porkbun' not in plain.stdout
+        assert '$' not in plain.stdout and 'porkbun' not in plain.stdout
         assert cache.read_bytes() == original
         print('Plain output remained two domain/status rows and left the pricing cache untouched.', flush=True)
 

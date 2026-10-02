@@ -31,7 +31,10 @@
   locations are kept.
 
 **Fixed**
+- False "available" when rdap.org has no RDAP service for an extension (its own 404
+  is now inconclusive). `.co` now uses WHOIS only and `.so` the registry's RDAP.
 - `.so` names reported as taken from the WHOIS "object does not exist" reply.
+- WHOIS "taken" requires a record field, not "domain:" anywhere in the text.
 - Taken now requires real NS records or a valid RDAP domain object.
 - Watchlist: saved atomically, locked across processes, corrupt files reported,
   unsupported domains rejected, known status kept on inconclusive checks, and

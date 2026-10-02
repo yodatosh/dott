@@ -57,7 +57,10 @@ pub fn rdap_url(name: &str, tld: &str) -> Option<String> {
         "xyz" | "fm" => Some(format!("https://rdap.centralnic.com/{}/domain/{}.{}", tld, name, tld)),
         "cv" => Some(format!("https://rdap.nic.cv/domain/{}.{}", name, tld)),
         "bot" => Some(format!("https://rdap.nominet.uk/bot/domain/{}.{}", name, tld)),
-        "sh" | "gg" => None, // RDAP endpoints don't work — use WHOIS only
+        "so" => Some(format!("https://rdap.nic.so/domain/{}.{}", name, tld)),
+        // No working RDAP: rdap.org has no service for these, and CentralNic's .co RDAP
+        // answers 404 even for registered names. WHOIS only.
+        "sh" | "gg" | "co" => None,
         _ => Some(format!("https://rdap.org/domain/{}.{}", name, tld)),
     }
 }

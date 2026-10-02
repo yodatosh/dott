@@ -39,8 +39,8 @@ echo myname | dott          # pipe mode (plain)
 ```
 
 ```text
-  ✓  myname.com   est $11.08 reg · $11.08 renew/yr
-  ✓  myname.org   est $7.98 reg · $10.74 renew/yr
+  ✓  myname.com   $11.08 on porkbun
+  ✓  myname.org   $7.98 on porkbun
   ★  myname.dev   reserved / blocked
   ?  myname.gg
   ✗  myname.io    reg 2019-05-02  exp 2026-08-15

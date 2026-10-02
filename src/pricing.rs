@@ -36,7 +36,7 @@ impl Catalog {
         match self.cache.prices.get(tld) {
             Some(price) => {
                 let cached = if self.now.saturating_sub(price.fetched_at) >= DAY { " · cached" } else { "" };
-                format!("  est ${} reg · ${} renew/yr{cached}", money(price.registration_cents), money(price.renewal_cents))
+                format!("  ${} on porkbun{cached}", money(price.registration_cents))
             }
             None => "  price unavailable".into(),
         }
@@ -148,6 +148,20 @@ mod tests {
     use super::*;
     use std::io::Read;
 
+    // Mock servers give up after 10s instead of waiting forever for a client that never connects.
+    fn accept(listener: &std::net::TcpListener) -> std::net::TcpStream {
+        listener.set_nonblocking(true).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            match listener.accept() {
+                Ok((stream, _)) => { stream.set_nonblocking(false).unwrap(); return stream; }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock && std::time::Instant::now() < deadline =>
+                    std::thread::sleep(Duration::from_millis(10)),
+                Err(e) => panic!("mock server got no connection: {e}"),
+            }
+        }
+    }
+
     struct Temporary(PathBuf);
     impl Temporary {
         fn new() -> Self {
@@ -167,7 +181,7 @@ mod tests {
         let url = format!("http://{}/pricing/get", listener.local_addr().unwrap());
         let response = format!("HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
         let thread = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
+            let mut stream = accept(&listener);
             stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
             let mut request = [0; 4096];
             let size = stream.read(&mut request).unwrap();
@@ -213,7 +227,7 @@ mod tests {
         let (url, server) = server("200 OK", body);
         let catalog = load_at(&client, &temp.file(), &url, 100).await;
         server.join().unwrap();
-        assert_eq!(catalog.label("example.com"), "  est $11.08 reg · $12.00 renew/yr");
+        assert_eq!(catalog.label("example.com"), "  $11.08 on porkbun");
         let cached = load_at(&client, &temp.file(), &url, 100 + DAY - 1).await;
         assert_eq!(cached.label("example.com"), catalog.label("example.com"));
         assert_eq!(read_cache(&temp.file(), 100 + DAY).attempted_at, Some(100));
@@ -236,7 +250,7 @@ mod tests {
             let (url, server) = server(status, body);
             let old = load_at(&client, &temp.file(), &url, 100 + DAY).await;
             server.join().unwrap();
-            assert_eq!(old.label("example.com"), "  est $11.08 reg · $12.00 renew/yr · cached");
+            assert_eq!(old.label("example.com"), "  $11.08 on porkbun · cached");
             let again = load_at(&client, &temp.file(), &url, 101 + DAY).await;
             assert_eq!(again.label("example.com"), old.label("example.com"));
             assert_eq!(read_cache(&temp.file(), 101 + DAY).attempted_at, Some(100 + DAY));
@@ -251,7 +265,7 @@ mod tests {
         let catalog = load_at(&Client::builder().no_proxy().build().unwrap(), &temp.file(), &url, 100 + DAY).await;
         server.join().unwrap();
         assert!(catalog.label("example.com").ends_with(" · cached"));
-        assert_eq!(catalog.label("example.org"), "  est $7.98 reg · $10.74 renew/yr");
+        assert_eq!(catalog.label("example.org"), "  $7.98 on porkbun");
         assert_eq!(catalog.label("example.so"), "  price unavailable");
     }
 
@@ -278,10 +292,10 @@ mod tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}/pricing/get", listener.local_addr().unwrap());
         let server = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
+            let mut stream = accept(&listener);
             stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
             let mut request = [0; 4096];
-            stream.read(&mut request).unwrap();
+            let _ = stream.read(&mut request).unwrap();
             stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n").unwrap();
             std::thread::sleep(Duration::from_secs(5));
         });
