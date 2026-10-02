@@ -1,7 +1,7 @@
 use clap::Parser;
 
 #[derive(Parser)]
-#[command(name = "dott", version, about = "private domain search. no middlemen.")]
+#[command(name = "dott", version, about = "Find an available domain name from your terminal.")]
 #[command(group(clap::ArgGroup::new("action").args(["name", "suggest", "update", "watch", "unwatch", "watching", "background_check", "notify", "pending", "shell_notice"]).multiple(false)))]
 pub struct Cli {
     pub name: Option<String>,

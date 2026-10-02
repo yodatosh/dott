@@ -7,7 +7,7 @@
   </picture>
 </p>
 
-Domain search for the terminal. Checks RDAP, WHOIS and DNS in parallel, **directly from your machine** — no proxy API, no analytics.
+Domain search for the terminal. Checks RDAP, WHOIS and DNS in parallel, straight against each registry.
 
 ## Install
 
