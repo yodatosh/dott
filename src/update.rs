@@ -4,13 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::{fs, path::{Path, PathBuf}, process::Command, time::{Duration, SystemTime, UNIX_EPOCH}};
 
 const REPO: &str = "yodatosh/dott";
-pub const BREW_UPDATE: &str = "brew update && brew upgrade dott";
 const RECEIPT: &str = ".dott-install";
-
-pub fn installed_via_brew(path: &Path) -> bool {
-    let parts: Vec<_> = path.components().collect();
-    parts.windows(2).any(|p| p[0].as_os_str() == "Cellar" && p[1].as_os_str() == "dott")
-}
 
 fn standalone(path: &Path) -> bool {
     let receipt = path.parent().map(|p| p.join(RECEIPT));
@@ -23,9 +17,7 @@ fn standalone(path: &Path) -> bool {
 
 pub fn update_hint() -> &'static str {
     let path = std::env::current_exe().and_then(fs::canonicalize).unwrap_or_default();
-    if installed_via_brew(&path) {
-        BREW_UPDATE
-    } else if cfg!(feature = "self-update") && standalone(&path) && target().is_some() {
+    if cfg!(feature = "self-update") && standalone(&path) && target().is_some() {
         "dott --update"
     } else {
         "github.com/yodatosh/dott#updates"
@@ -154,16 +146,12 @@ fn replace_binary(staging: &Staging, destination: &Path, version: &str) -> Resul
 
 pub async fn run(client: &Client) -> Result<(), String> {
     let path = std::env::current_exe().and_then(fs::canonicalize).map_err(|e| e.to_string())?;
-    if installed_via_brew(&path) {
-        run_brew(Path::new("brew"))?;
-        return Ok(());
-    }
     if !cfg!(feature = "self-update") {
         return Err("Self-updating is disabled in this build. Use your package manager to update dott.".into());
     }
     let target = target().ok_or("Standalone updates support macOS and GNU Linux on Intel/ARM64. Update this installation from source; see README.md.")?;
     if !standalone(&path) {
-        return Err("This installation is not managed by the standalone installer. Update it using its original installation method; see github.com/yodatosh/dott#updates.".into());
+        return Err("This copy of dott wasn't installed by the curl installer. Reinstall with: curl -fsSL https://raw.githubusercontent.com/yodatosh/dott/master/install.sh | sh".into());
     }
     let version = latest(client, Duration::from_secs(15)).await?;
     if !newer(&version, env!("CARGO_PKG_VERSION")) {
@@ -186,31 +174,10 @@ pub async fn run(client: &Client) -> Result<(), String> {
     Ok(())
 }
 
-fn run_brew(program: &Path) -> Result<(), String> {
-    println!("Updating dott through Homebrew...");
-    for args in [&["update"][..], &["upgrade", "dott"][..]] {
-        let status = Command::new(program).args(args).status()
-            .map_err(|e| format!("Could not run Homebrew: {e}. Run {BREW_UPDATE}"))?;
-        if !status.success() {
-            return Err(format!("brew {} failed ({status}). Resolve the Homebrew error and retry.", args.join(" ")));
-        }
-    }
-    println!("Homebrew update finished. Restart dott to use the installed version.");
-    Ok(())
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn brew_detection_distinguishes_standalone_and_cellar() {
-        assert!(installed_via_brew(Path::new("/opt/homebrew/Cellar/dott/0.7.0/bin/dott")));
-        assert!(installed_via_brew(Path::new("/home/linuxbrew/.linuxbrew/Cellar/dott/0.7.0/bin/dott")));
-        assert!(!installed_via_brew(Path::new("/opt/homebrew/bin/dott")));
-        assert!(!installed_via_brew(Path::new("/usr/local/bin/dott")));
-        assert!(!installed_via_brew(Path::new("/tmp/Cellar/another-tool/bin/dott")));
-    }
 
     #[test]
     fn stable_versions_compare_by_semver_precedence() {
@@ -267,23 +234,5 @@ mod tests {
         replace_binary(&staging, &destination, "0.7.0").unwrap();
         let output = Command::new(destination).arg("--version").output().unwrap();
         assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "dott 0.7.0");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn brew_updates_before_upgrading_and_stops_on_failure() {
-        use std::os::unix::fs::PermissionsExt;
-        let staging = Staging::new(&std::env::temp_dir()).unwrap();
-        let program = staging.0.join("brew");
-        let log = staging.0.join("calls");
-        // The fixture writes beside itself; no real Homebrew invocation or env changes.
-        fs::write(&program, b"#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$(dirname \"$0\")/calls\"\n").unwrap();
-        fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
-        run_brew(&program).unwrap();
-        assert_eq!(fs::read_to_string(&log).unwrap(), "update\nupgrade dott\n");
-        fs::remove_file(&log).unwrap();
-        fs::write(&program, b"#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$(dirname \"$0\")/calls\"\nexit 1\n").unwrap();
-        assert!(run_brew(&program).is_err());
-        assert_eq!(fs::read_to_string(log).unwrap(), "update\n");
     }
 }

@@ -26,8 +26,8 @@ elif [ -n "$EXISTING" ]; then
   LINK=$(readlink "$EXISTING" || true)
   case "$EXISTING/$LINK" in
     */Cellar/dott/*)
-      echo "Homebrew manages this installation. Run:" >&2
-      echo "  brew update && brew upgrade dott" >&2
+      echo "dott is no longer on Homebrew. Remove that copy, then rerun this installer:" >&2
+      echo "  brew uninstall dott && brew untap yodatosh/dott" >&2
       exit 1
       ;;
   esac

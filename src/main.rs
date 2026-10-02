@@ -809,13 +809,8 @@ fn send_notification(title: &str, body: &str) -> Result<(), String> {
     Ok(())
 }
 
-// Brew's stable link survives upgrades, which remove versioned Cellar directories.
 fn stable_binary() -> Result<PathBuf, String> {
-    let exe = std::env::current_exe().and_then(fs::canonicalize).map_err(|e| e.to_string())?;
-    Ok(if update::installed_via_brew(&exe) {
-        exe.ancestors().find(|p| p.file_name().is_some_and(|n| n == "Cellar"))
-            .and_then(|p| p.parent()).map(|p| p.join("bin/dott")).unwrap_or(exe)
-    } else { exe })
+    std::env::current_exe().and_then(fs::canonicalize).map_err(|e| e.to_string())
 }
 
 // Sets up dott.app for anyone watching domains, including people who watched before it existed.
@@ -844,7 +839,7 @@ fn install_launch_agent() -> Result<(), String> {
 
     let binary = binary.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
     // if plist exists and already points to the current binary, leave it alone.
-    // otherwise it's stale (binary moved, `brew upgrade`, `cargo install` from a new path) — unload and rewrite.
+    // otherwise it's stale (binary moved or reinstalled elsewhere) — unload and rewrite.
     if let Ok(existing) = fs::read_to_string(&plist_path) {
         if existing.contains(&format!("<string>{binary}</string>")) {
             let loaded = std::process::Command::new("launchctl").args(["list", "com.dott.watch"])

@@ -11,7 +11,7 @@ pub struct Cli {
     pub suggest: Option<Vec<String>>,
     #[arg(long, conflicts_with_all = ["watch", "unwatch", "watching", "background_check"])]
     pub plain: bool,
-    /// Update dott using Homebrew or the standalone installer
+    /// Update dott to the latest release
     #[arg(long, conflicts_with_all = ["name", "suggest", "tlds", "plain", "watch", "unwatch", "watching", "background_check"])]
     pub update: bool,
     #[arg(long, value_name = "DOMAIN")]

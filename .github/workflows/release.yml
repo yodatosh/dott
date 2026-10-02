@@ -90,13 +90,13 @@ jobs:
           pattern: dott-*
           path: dist
           merge-multiple: true
-      - name: Verify all assets and generate formula
+      - name: Verify all assets
         env:
           RELEASE_TAG: ${{ github.ref_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           PREVIOUS=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
-          python3 Tools/release.py formula --tag "$RELEASE_TAG" --previous "$PREVIOUS" --assets dist
+          python3 Tools/release.py assets --tag "$RELEASE_TAG" --previous "$PREVIOUS" --assets dist
       - name: Create draft, upload all assets, then publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -112,33 +112,3 @@ jobs:
           fi
           gh release upload "$RELEASE_TAG" dist/*.tar.gz dist/*.sha256 --repo "$RELEASE_REPO" --clobber
           gh release edit "$RELEASE_TAG" --repo "$RELEASE_REPO" --draft=false --latest
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dott-formula
-          path: Formula/dott.rb
-          if-no-files-found: error
-
-  update-formula:
-    needs: publish
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: master
-      - uses: actions/download-artifact@v4
-        with:
-          name: dott-formula
-          path: Formula
-      - name: Push formula for the published release
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/dott.rb
-          if ! git diff --cached --quiet; then
-            git commit -m "dott ${RELEASE_TAG#v}"
-            git push
-          fi

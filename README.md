@@ -1,5 +1,10 @@
+<h1 align="center">dott — domain availability checker for your terminal</h1>
+
 <p align="center">
-  <img src="preview.png" width="800" alt="dott">
+  <picture>
+    <source srcset="preview.avif" type="image/avif">
+    <img src="preview.jpg" width="800" alt="dott checking domain availability across .com, .io, .dev, .ai and more in the terminal">
+  </picture>
 </p>
 
 Domain search for the terminal. Checks RDAP, WHOIS and DNS in parallel, **directly from your machine** — no proxy API, no analytics.
@@ -7,10 +12,6 @@ Domain search for the terminal. Checks RDAP, WHOIS and DNS in parallel, **direct
 ## Install
 
 ```sh
-# Homebrew (macOS / Linux)
-brew tap yodatosh/dott https://github.com/yodatosh/dott
-brew install yodatosh/dott/dott
-
 # curl (macOS / GNU Linux) — installs to ~/.local/bin, or set DOTT_INSTALL_DIR
 curl -fsSL https://raw.githubusercontent.com/yodatosh/dott/master/install.sh | sh
 
@@ -22,7 +23,9 @@ Alpine/musl users should build from source.
 
 ## Update
 
-`dott --update` (or `/update` in interactive mode) runs `brew update && brew upgrade dott` for Homebrew installs, or downloads and verifies the new binary for curl installs. Source installs: rerun `cargo install`.
+`dott --update` (or `/update` in interactive mode) downloads, verifies and swaps in the new binary. Source installs: rerun `cargo install`.
+
+Homebrew was dropped in 0.8.0 to keep things simple: one binary, one installer, one update path. Installed with brew before? Run `brew uninstall dott && brew untap yodatosh/dott`, then the curl line above.
 
 Terminal sessions check GitHub for a new release at most once a day; set `DOTT_NO_UPDATE_CHECK=1` to turn that off.
 

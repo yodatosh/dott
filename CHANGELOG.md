@@ -6,12 +6,13 @@
 - `/tlds`: choose which extensions bare-name searches and suggestions check, with
   keyboard and mouse. Saved across sessions; `--tlds` overrides it for one run.
 - `.bot` extension.
-- Porkbun registration and renewal estimates, refreshed at most daily, with
+- Porkbun registration prices ("$11.08 on porkbun"), refreshed at most daily, with
   saved prices kept when a refresh fails. Never shown in plain output.
-- `dott --update` and `/update`: Homebrew installs run `brew upgrade`; curl
-  installs download, verify checksum and version, and replace atomically.
+- `dott --update` and `/update`: download, verify checksum and version, and
+  replace the binary atomically.
 - Daily release check in terminal sessions; `DOTT_NO_UPDATE_CHECK` disables it.
 - Farewell uses your username.
+- New `❯❯❯` prompt in the logo colors; input is held until results finish.
 - macOS watchlist notifications come from "dott" instead of Script Editor, via a
   small `~/.dott/dott.app` helper; falls back to Script Editor if it can't be used.
 - Watchlist changes show when opening dott, and optionally in every new zsh
@@ -24,6 +25,8 @@
   at startup, so the first search is as fast as later ones.
 
 **Changed**
+- Homebrew is no longer supported; install with curl. Brew users: `brew uninstall
+  dott && brew untap yodatosh/dott`, then run the curl installer.
 - A full domain always checks exactly that domain, even with `--tlds`.
 - Invalid names and unsupported extensions are rejected; names are case-insensitive.
 - Plain and redirected output contain only `<domain> <status>` lines.
@@ -33,16 +36,16 @@
 **Fixed**
 - False "available" when rdap.org has no RDAP service for an extension (its own 404
   is now inconclusive). `.co` now uses WHOIS only and `.so` the registry's RDAP.
+- `name+` no longer repeats the name you just searched.
 - `.so` names reported as taken from the WHOIS "object does not exist" reply.
 - WHOIS "taken" requires a record field, not "domain:" anywhere in the text.
 - Taken now requires real NS records or a valid RDAP domain object.
 - Watchlist: saved atomically, locked across processes, corrupt files reported,
   unsupported domains rejected, known status kept on inconclusive checks, and
   failed notifications retried.
-- macOS watch job follows Homebrew's stable link and reloads when inactive.
+- macOS watch job reloads when inactive.
 - Malformed expiry dates no longer panic.
-- Releases publish only after every build passes, with the formula generated
-  from verified artifacts.
+- Releases publish only after every build passes and all archives verify.
 
 ## 0.6.9
 

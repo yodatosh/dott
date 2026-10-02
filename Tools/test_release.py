@@ -39,10 +39,7 @@ class ReleaseTests(unittest.TestCase):
                     bundle.addfile(info, io.BytesIO(b'binary'))
                 (root / f'{archive.name}.sha256').write_text(
                     f'{hashlib.sha256(archive.read_bytes()).hexdigest()}  {archive.name}\n')
-            sums = release.verify_assets(root)
-            formula = release.formula('0.7.0', 'yodatosh/dott', sums)
-            self.assertEqual(formula.count('/releases/download/v0.7.0/'), 4)
-            self.assertIn('dott 0.7.0', formula)
+            self.assertEqual(len(release.verify_assets(root)), 4)
             first = root / f'dott-{release.TARGETS[0]}.tar.gz'
             first.write_bytes(b'corrupt')
             with self.assertRaises(ValueError):

@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Validate stable releases and generate the tap formula from verified assets."""
+"""Validate stable releases and their built assets."""
 import argparse
 import hashlib
-import os
 from pathlib import Path
 import re
 import tarfile
@@ -54,46 +53,19 @@ def verify_assets(directory):
     return checksums
 
 
-def formula(version, repository, checksums):
-    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
-        raise ValueError("Invalid GitHub repository")
-    lines = [
-        "class Dott < Formula", '  desc "Private domain search. No middlemen."',
-        f'  homepage "https://github.com/{repository}"', f'  version "{version}"', "",
-    ]
-    for os_name, suffix in [("macos", "apple-darwin"), ("linux", "unknown-linux-gnu")]:
-        lines.append(f"  on_{os_name} do")
-        for arch, prefix in [("arm", "aarch64"), ("intel", "x86_64")]:
-            target = f"{prefix}-{suffix}"
-            lines.extend([
-                f"    on_{arch} do",
-                f'      url "https://github.com/{repository}/releases/download/v{version}/dott-{target}.tar.gz"',
-                f'      sha256 "{checksums[target]}"', "    end",
-            ])
-        lines.extend(["  end", ""])
-    lines.extend([
-        "  def install", '    bin.install "dott"', "  end", "", "  test do",
-        f'    assert_equal "dott {version}", shell_output("#{{bin}}/dott --version").strip',
-        "  end", "end", "",
-    ])
-    return "\n".join(lines)
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["check", "formula"])
+    parser.add_argument("command", choices=["check", "assets"])
     parser.add_argument("--tag")
     parser.add_argument("--previous", help="Latest published tag; reject non-increasing releases")
     parser.add_argument("--assets", type=Path)
-    parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", "yodatosh/dott"))
     args = parser.parse_args()
     try:
         version = validate_version(args.tag, previous=args.previous)
-        if args.command == "formula":
+        if args.command == "assets":
             if not args.assets or not args.tag:
-                parser.error("formula requires --tag and --assets")
-            checksums = verify_assets(args.assets)
-            (ROOT / "Formula/dott.rb").write_text(formula(version, args.repository, checksums))
+                parser.error("assets requires --tag and --assets")
+            verify_assets(args.assets)
         print(f"Validated dott {version}")
     except (ValueError, OSError, KeyError, StopIteration, tarfile.TarError) as error:
         parser.exit(1, f"Release validation failed: {error}\n")
