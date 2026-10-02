@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise llms.txt's agent workflow against live registries (explicit opt-in)."""
+"""Exercise the plain-output agent workflow against live registries (explicit opt-in)."""
 import argparse
 import json
 from pathlib import Path
@@ -60,7 +60,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--binary', default='/usr/local/bin/dott')
     args = parser.parse_args()
-    print('Following llms.txt: --plain, targeted TLDs, piped domains, suggestions.', flush=True)
+    print('Agent workflow: --plain, targeted TLDs, piped domains, suggestions.', flush=True)
     registered = ['google.com', 'github.com', 'openai.com', 'example.com',
                   'rust-lang.org', 'python.org', 'google.dev', 'amazon.bot']
     rows = query(args.binary, [], '\n'.join(registered) + '\n')

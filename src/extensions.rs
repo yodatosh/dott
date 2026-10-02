@@ -62,11 +62,12 @@ fn save_at(path: &Path, tlds: &[&str]) -> io::Result<()> {
 }
 
 pub fn summary(active: Option<&[&str]>) -> String {
-    let list = match active {
-        Some(tlds) if tlds.len() < ALL_TLDS.len() => tlds.iter().map(|t| format!(".{t}")).collect::<Vec<_>>().join(" "),
-        _ => format!("all {}", ALL_TLDS.len()),
+    let total = ALL_TLDS.len();
+    let count = match active {
+        Some(tlds) if tlds.len() < total => format!("{} of {total}", tlds.len()),
+        _ => format!("all {total}"),
     };
-    format!("  {}  {}  {}", "extensions".truecolor(80, 80, 100), list.bright_white(), "· /tlds to change".truecolor(80, 80, 100))
+    format!("  {} {}", count.bright_white(), "extensions · /tlds".truecolor(80, 80, 100))
 }
 
 #[derive(Debug, PartialEq)]
@@ -346,6 +347,15 @@ mod tests {
         assert_eq!(target_at(&narrow, buttons, 9), Some(s.order.len() + 1));
         assert_eq!(target_at(&narrow, buttons, 18), Some(s.apply_index()));
         assert_eq!(lines.len(), buttons + 4);
+    }
+
+    #[test]
+    fn summary_is_a_short_count() {
+        colored::control::set_override(false);
+        let total = ALL_TLDS.len();
+        assert_eq!(summary(Some(&["com", "io"])), format!("  2 of {total} extensions · /tlds"));
+        assert_eq!(summary(None), format!("  all {total} extensions · /tlds"));
+        assert_eq!(summary(Some(ALL_TLDS)), format!("  all {total} extensions · /tlds"));
     }
 
     #[test]

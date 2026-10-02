@@ -21,7 +21,10 @@ use tokio::sync::Semaphore;
 mod cli;
 mod config;
 mod extensions;
+#[cfg(target_os = "macos")]
+mod notify;
 mod model;
+mod notices;
 mod utils;
 mod update;
 mod pricing;
@@ -767,6 +770,14 @@ async fn lock_watchlist() -> Result<fs::File, String> {
 
 fn send_notification(title: &str, body: &str) -> Result<(), String> {
     if !cfg!(target_os = "macos") { return Ok(()); }
+    #[cfg(target_os = "macos")]
+    if let Ok(binary) = stable_binary()
+        && let Some(dir) = watchlist_path().parent()
+        && notify::send(dir, &binary, title, body).is_ok()
+    {
+        return Ok(());
+    }
+    // Fallback: macOS credits this to Script Editor, but an alert is never lost.
     let script = format!("display notification {} with title {}",
         serde_json::to_string(body).unwrap_or_default(),
         serde_json::to_string(title).unwrap_or_default());
@@ -778,16 +789,38 @@ fn send_notification(title: &str, body: &str) -> Result<(), String> {
     Ok(())
 }
 
+// Brew's stable link survives upgrades, which remove versioned Cellar directories.
+fn stable_binary() -> Result<PathBuf, String> {
+    let exe = std::env::current_exe().and_then(fs::canonicalize).map_err(|e| e.to_string())?;
+    Ok(if update::installed_via_brew(&exe) {
+        exe.ancestors().find(|p| p.file_name().is_some_and(|n| n == "Cellar"))
+            .and_then(|p| p.parent()).map(|p| p.join("bin/dott")).unwrap_or(exe)
+    } else { exe })
+}
+
+// Sets up dott.app for anyone watching domains, including people who watched before it existed.
+// On creation, a short hello makes macOS list dott under Notifications and ask permission now
+// rather than on the day a domain frees up. Never fails the caller; the osascript fallback remains.
+fn prepare_notifier(hello: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        let path = watchlist_path();
+        let Some(dir) = path.parent() else { return };
+        if !load_watchlist_at(&path).is_ok_and(|entries| !entries.is_empty()) { return; }
+        let Ok(binary) = stable_binary() else { return };
+        if notify::ensure(dir, &binary).unwrap_or(false) && hello {
+            let _ = notify::send(dir, &binary, "dott", "Watchlist alerts now come from dott.");
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = hello;
+}
+
 fn install_launch_agent() -> Result<(), String> {
     if !cfg!(target_os = "macos") { return Ok(()); }
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
     let plist_path = PathBuf::from(&home).join("Library").join("LaunchAgents").join("com.dott.watch.plist");
-    let exe = std::env::current_exe().and_then(fs::canonicalize).map_err(|e| e.to_string())?;
-    // Use Brew's stable link, since upgrades remove versioned Cellar directories.
-    let binary = if update::installed_via_brew(&exe) {
-        exe.ancestors().find(|p| p.file_name().is_some_and(|n| n == "Cellar"))
-            .and_then(|p| p.parent()).map(|p| p.join("bin/dott")).unwrap_or(exe)
-    } else { exe }.to_string_lossy().to_string();
+    let binary = stable_binary()?.to_string_lossy().to_string();
 
     let binary = binary.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
     // if plist exists and already points to the current binary, leave it alone.
@@ -844,6 +877,8 @@ async fn cmd_watch(client: &Client, domain: &str) -> Result<(), String> {
 
     entries.push(WatchEntry { domain: domain.clone(), last_status: status_str.clone() });
     save_watchlist(&entries)?;
+    // A first domain gets the "Now watching" notification below, which serves as the hello.
+    prepare_notifier(!first_domain);
     install_launch_agent().map_err(|e| format!("Watchlist saved, but automatic monitoring could not be installed: {e}"))?;
 
     println!("\n  {} watching {}", "✓".bright_green().bold(), domain.bright_white().bold());
@@ -857,8 +892,8 @@ async fn cmd_watch(client: &Client, domain: &str) -> Result<(), String> {
         if let Err(error) = send_notification("dott", &format!("Now watching {} — you'll be notified when it's available.", domain)) {
             eprintln!("dott: {error}");
         }
-        println!("  {} {}", "·".truecolor(80, 80, 100), "if no notification appeared, allow notifications for Script Editor in:".truecolor(100, 100, 130));
-        println!("     {}", "System Settings → Notifications → Script Editor".bright_white());
+        println!("  {} {}", "·".truecolor(80, 80, 100), "if no notification appeared, allow notifications for dott in:".truecolor(100, 100, 130));
+        println!("     {}", "System Settings → Notifications → dott".bright_white());
         let _ = std::process::Command::new("open")
             .arg("x-apple.systempreferences:com.apple.preference.notifications")
             .output();
@@ -866,8 +901,65 @@ async fn cmd_watch(client: &Client, domain: &str) -> Result<(), String> {
     if !cfg!(target_os = "macos") {
         println!("  Automatic monitoring is available on macOS. Schedule dott --background-check to refresh the list on this platform.");
     }
+    if first_domain { offer_shell_notice(); }
     println!();
     Ok(())
+}
+
+fn offer_shell_notice() {
+    let Some(rc) = notices::zshrc_path() else { return };
+    if !notices::uses_zsh() || notices::has_hook(&rc) || !io::stdin().is_terminal() || !io::stdout().is_terminal() { return; }
+    print!("  {} show watchlist updates in new terminal windows? adds one line to {} {} ",
+        "·".truecolor(80, 80, 100), rc.display(), "[y/N]".truecolor(100, 100, 130));
+    let _ = io::stdout().flush();
+    let mut answer = String::new();
+    if io::stdin().read_line(&mut answer).is_err() || !answer.trim().eq_ignore_ascii_case("y") { return; }
+    match notices::add_hook(&rc) {
+        Ok(()) => println!("  {} added · remove anytime with {}", "✓".bright_green().bold(), "dott --shell-notice off".bright_white()),
+        Err(error) => eprintln!("dott: Could not update {}: {error}", rc.display()),
+    }
+}
+
+fn cmd_shell_notice(on: bool) -> Result<(), String> {
+    let rc = notices::zshrc_path().ok_or("HOME is not set")?;
+    let failed = |e: io::Error| format!("Could not update {}: {e}", rc.display());
+    if on {
+        if !notices::uses_zsh() {
+            return Err("Terminal notices support zsh only; add `dott --pending` to your shell's startup file instead.".into());
+        }
+        notices::add_hook(&rc).map_err(failed)?;
+        println!("  {} new terminal windows will show watchlist updates ({})", "✓".bright_green().bold(), rc.display());
+    } else if notices::remove_hook(&rc).map_err(failed)? {
+        println!("  {} removed dott's line from {}", "✓".bright_green().bold(), rc.display());
+    } else {
+        println!("  {} dott's line is not in {}", "·".truecolor(100, 100, 120), rc.display());
+    }
+    Ok(())
+}
+
+// Runs from ~/.zshrc on every new window: no network, no lock, no errors, silent when there's no news.
+fn print_pending() {
+    let path = watchlist_path();
+    let Some(dir) = path.parent() else { return };
+    let list = notices::load(dir);
+    if list.is_empty() { return; }
+    for notice in &list { println!("{}  {}", "dott".bright_magenta().bold(), notices::line(notice)); }
+    println!("      {}", "open dott or run dott --watching to dismiss".truecolor(80, 80, 100));
+}
+
+// Shows unseen watchlist changes once, then marks them seen.
+fn show_notices() {
+    let path = watchlist_path();
+    let Some(dir) = path.parent() else { return };
+    if notices::load(dir).is_empty() { return; }
+    // Lock so a background check can't record a change between showing and clearing.
+    let _guard = lock_watchlist_at(&path).ok();
+    let list = notices::load(dir);
+    if list.is_empty() { return; }
+    println!("  {}", "watchlist updates".truecolor(80, 80, 100));
+    for notice in &list { println!("  {}", notices::line(notice)); }
+    println!();
+    notices::clear(dir);
 }
 
 async fn cmd_unwatch(domain: &str) -> Result<(), String> {
@@ -881,13 +973,22 @@ async fn cmd_unwatch(domain: &str) -> Result<(), String> {
         return Ok(());
     }
     save_watchlist(&entries)?;
-    println!("\n  {} stopped watching {}\n", "✓".bright_green().bold(), domain.bright_white().bold());
+    println!("\n  {} stopped watching {}", "✓".bright_green().bold(), domain.bright_white().bold());
+    // Nothing left to report, so the terminal-window line goes too.
+    if entries.is_empty()
+        && let Some(rc) = notices::zshrc_path()
+        && notices::remove_hook(&rc).unwrap_or(false)
+    {
+        println!("  {} watchlist empty · removed dott's line from {}", "·".truecolor(80, 80, 100), rc.display());
+    }
+    println!();
     Ok(())
 }
 
 fn cmd_watching_list() {
     let entries = load_watchlist();
     println!();
+    show_notices();
     if entries.is_empty() {
         println!("  {} no domains being watched", "·".truecolor(100, 100, 120));
         println!("  {} use {} to start\n", "·".truecolor(80, 80, 100), "dott --watch <domain>".bright_white());
@@ -924,6 +1025,7 @@ async fn cmd_background_check(client: &Client) -> Result<(), String> {
     let _guard = lock_watchlist().await?;
     let mut entries = load_watchlist();
     if entries.is_empty() { return Ok(()); }
+    prepare_notifier(true);
     let sem = Arc::new(Semaphore::new(5));
     // Keep unsupported or malformed legacy entries rather than checking a different domain.
     let domains: Vec<_> = entries.iter().enumerate().filter_map(|(index, e)| {
@@ -936,20 +1038,43 @@ async fn cmd_background_check(client: &Client) -> Result<(), String> {
     let results = join_all(tasks).await;
     let mut changed = false;
     let mut errors = Vec::new();
+    let mut news = Vec::new();
     for ((index, _, _), (_, status)) in domains.iter().zip(results.iter()) {
         let entry = &mut entries[*index];
+        let before = entry.last_status.clone();
         match refresh_watch_entry(entry, status, send_notification) {
-            Ok(updated) => changed |= updated,
+            Ok(updated) => {
+                changed |= updated;
+                // After "unknown", only availability is news; "taken" may have been true all along.
+                if updated && (before != "unknown" || entry.last_status == "available") {
+                    news.push((entry.domain.clone(), entry.last_status.clone()));
+                }
+            }
             Err(error) => errors.push(format!("{}: {error}", entry.domain)),
         }
     }
     if changed { save_watchlist(&entries)?; }
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    if let Some(dir) = watchlist_path().parent() {
+        for (domain, status) in &news {
+            if let Err(error) = notices::record(dir, domain, status, now) {
+                errors.push(format!("{domain}: Could not save update notice: {error}"));
+            }
+        }
+    }
     if errors.is_empty() { Ok(()) } else { Err(errors.join("; ")) }
 }
 
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
+    #[cfg(target_os = "macos")]
+    if let Some(args) = &cli.notify {
+        finish_command(notify::deliver(&args[0], &args[1]));
+        return;
+    }
+    if cli.pending { print_pending(); return; }
+    if let Some(ref mode) = cli.shell_notice { finish_command(cmd_shell_notice(mode == "on")); return; }
     let client = Client::new();
     if cli.update {
         if let Err(error) = update::run(&client).await {
@@ -1053,6 +1178,8 @@ async fn main() {
 
     // ── interactive mode ───────────────────────────────────────
     print_cat();
+    show_notices();
+    std::thread::spawn(|| prepare_notifier(true));
     println!("{}\n", extensions::summary(active_tlds.as_deref()));
     warm_up(&client, active_tlds.as_deref().unwrap_or(ALL_TLDS));
     tokio::spawn({
