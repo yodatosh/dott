@@ -2,3 +2,5 @@
 .DS_Store
 /future
 RELEASING.md
+AGENTS.md
+__pycache__/

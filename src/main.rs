@@ -5,7 +5,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
 };
-use futures::future::join_all;
+use futures::{future::join_all, FutureExt};
 use reqwest::Client;
 use std::{
     fs,
@@ -20,14 +20,59 @@ use tokio::net::TcpStream;
 use tokio::sync::Semaphore;
 mod cli;
 mod config;
+mod extensions;
 mod model;
 mod utils;
+mod update;
+mod pricing;
 
 use clap::Parser;
 use cli::Cli;
-use config::{ALL_TLDS, is_likely_premium, rdap_url, tld_price, tld_rank, whois_server};
+use config::{ALL_TLDS, is_likely_premium, rdap_url, tld_rank, whois_server};
 use model::{Availability, DomainDates, WatchEntry};
 use utils::{days_until, parse_date, parse_prose_date};
+
+fn valid_label(name: &str) -> bool {
+    !name.is_empty() && name.len() <= 63
+        && !name.starts_with('-') && !name.ends_with('-')
+        && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+}
+
+fn parse_search(raw: &str) -> Result<(String, Option<&'static str>), String> {
+    let input = raw.trim().to_ascii_lowercase();
+    let (name, tld) = match input.rsplit_once('.') {
+        Some((name, suffix)) => {
+            let tld = ALL_TLDS.iter().copied().find(|&t| t == suffix)
+                .ok_or_else(|| format!("Unsupported TLD: {suffix}"))?;
+            (name, Some(tld))
+        }
+        None => (input.as_str(), None),
+    };
+    if !valid_label(name) {
+        return Err("Use a domain label of 1–63 ASCII letters, digits or hyphens, without a leading/trailing hyphen (use punycode for international names).".into());
+    }
+    Ok((name.to_string(), tld))
+}
+
+fn parse_tlds(raw: &str) -> Result<Vec<&'static str>, String> {
+    let mut tlds = Vec::new();
+    for suffix in raw.split(',') {
+        let suffix = suffix.trim().to_ascii_lowercase();
+        let tld = ALL_TLDS.iter().copied().find(|&t| t == suffix)
+            .ok_or_else(|| format!("Unsupported TLD: {suffix}"))?;
+        if !tlds.contains(&tld) { tlds.push(tld); }
+    }
+    Ok(tlds)
+}
+
+// A full domain in the input checks exactly that domain; --tlds applies to bare names.
+fn search_tlds(explicit: Option<&'static str>, selected: Option<&[&'static str]>) -> Vec<&'static str> {
+    match (explicit, selected) {
+        (Some(tld), _) => vec![tld],
+        (None, Some(tlds)) => tlds.to_vec(),
+        (None, None) => ALL_TLDS.to_vec(),
+    }
+}
 
 async fn whois_check(name: &str, tld: &str) -> Availability {
     let server = match whois_server(tld) {
@@ -70,7 +115,16 @@ async fn whois_check(name: &str, tld: &str) -> Availability {
         stream.read_to_string(&mut response),
     ).await;
 
+    parse_whois(&response, tld)
+}
+
+fn parse_whois(response: &str, tld: &str) -> Availability {
     let lower = response.to_lowercase();
+    // whois.nic.so echoes "Domain Name:" in its not-found reply, so this unambiguous
+    // phrase must win over the Taken check below.
+    if lower.contains("object does not exist") || lower.contains("no object found") {
+        return Availability::Available;
+    }
     // check Taken first: CentralNic's .co footer contains the word "available"
     // in boilerplate, which otherwise tripped the Available heuristic.
     if lower.contains("domain name:") || lower.contains("domain:") {
@@ -95,12 +149,15 @@ async fn whois_check(name: &str, tld: &str) -> Availability {
             }
         };
         Availability::Taken(dates)
+    } else if lower.contains("domain is reserved") || lower.contains("domain name is reserved")
+        || lower.lines().any(|line| matches!(line.trim(), "status: reserved" | "domain status: reserved" | "status: not available")) {
+        Availability::Protected
     } else if lower.contains("no match")
         || lower.contains("not found")
         || lower.contains("no entries found")
         || lower.contains("object does not exist")
         || lower.contains("domain not found")
-        || lower.contains("available")
+        || lower.lines().any(|line| matches!(line.trim(), "available" | "status: available" | "domain status: available"))
     {
         Availability::Available
     } else {
@@ -120,7 +177,9 @@ async fn dns_check(client: &Client, name: &str, tld: &str) -> Availability {
             let json: serde_json::Value = r.json().await.unwrap_or_default();
             // Status=0 alone isn't enough: some registries (e.g. .fm) return NOERROR
             // with empty Answer for non-existent domains. Require actual NS records.
-            let has_ns = json["Answer"].as_array().is_some_and(|a| !a.is_empty());
+            let has_ns = json["Answer"].as_array().is_some_and(|a| {
+                a.iter().any(|record| record["type"].as_u64() == Some(2))
+            });
             match json["Status"].as_i64() {
                 Some(0) if has_ns => Availability::Taken(DomainDates::default()),
                 _ => Availability::Unknown,
@@ -130,14 +189,18 @@ async fn dns_check(client: &Client, name: &str, tld: &str) -> Availability {
     }
 }
 
-async fn http_query(client: &Client, url: &str, sem: &Semaphore) -> Availability {
+// None means the server never answered; any HTTP response is Some, even when inconclusive.
+async fn http_query(client: &Client, url: &str, sem: &Semaphore) -> Option<Availability> {
     let _permit = sem.acquire().await.unwrap();
     match client.get(url).header("User-Agent", "Mozilla/5.0").header("Accept", "application/json").timeout(Duration::from_secs(5)).send().await {
         Ok(resp) => {
             let status = resp.status().as_u16();
             let body = resp.text().await.unwrap_or_default();
-            match status {
+            Some(match status {
                 200 => {
+                    let valid_domain = serde_json::from_str::<serde_json::Value>(&body).ok()
+                        .is_some_and(|j| j["objectClassName"].as_str() == Some("domain"));
+                    if !valid_domain { return Some(Availability::Unknown); }
                     let dates = serde_json::from_str::<serde_json::Value>(&body).ok()
                         .and_then(|j| j["events"].as_array().cloned())
                         .map(|events| {
@@ -164,16 +227,19 @@ async fn http_query(client: &Client, url: &str, sem: &Semaphore) -> Availability
                     Availability::Taken(dates)
                 }
                 404 => {
-                    if body.contains("Blocked") || body.contains("blocked") {
+                    if body.to_ascii_lowercase().contains("blocked") {
                         Availability::Protected
-                    } else {
+                    } else if serde_json::from_str::<serde_json::Value>(&body).ok()
+                        .is_some_and(|j| j["errorCode"].as_u64() == Some(404)) {
                         Availability::Available
+                    } else {
+                        Availability::Unknown
                     }
                 }
                 _ => Availability::Unknown,
-            }
+            })
         }
-        Err(_) => Availability::Unknown,
+        Err(_) => None,
     }
 }
 
@@ -244,19 +310,21 @@ async fn check_domain_cached(
 
 async fn check_domain(client: Client, name: String, tld: &'static str, sem: Arc<Semaphore>) -> (String, Availability) {
     let domain = format!("{}.{}", name, tld);
+    if !valid_label(&name) { return (domain, Availability::Unknown); }
 
     let rdap_fut = async {
         let Some(primary) = rdap_url(&name, tld) else {
             return Availability::Unknown;
         };
-        let result = http_query(&client, &primary, &sem).await;
-        match result {
-            Availability::Unknown => {
+        // rdap.org only redirects to the registry, so retry through it only when the
+        // registry gave no response; an empty 404 or a 429 would just repeat.
+        match http_query(&client, &primary, &sem).await {
+            Some(result) => result,
+            None => {
                 let fallback = format!("https://rdap.org/domain/{}.{}", name, tld);
-                if fallback != primary { http_query(&client, &fallback, &sem).await }
+                if fallback != primary { http_query(&client, &fallback, &sem).await.unwrap_or(Availability::Unknown) }
                 else { Availability::Unknown }
             }
-            other => other,
         }
     };
 
@@ -267,10 +335,20 @@ async fn check_domain(client: Client, name: String, tld: &'static str, sem: Arc<
         async move { whois_check(&name, tld).await }
     });
 
-    let (rdap_result, dns_result) = tokio::join!(
-        rdap_fut,
-        dns_check(&client, &name, tld)
-    );
+    // RDAP "taken" is final under DNS > RDAP > WHOIS precedence, so don't wait on a slow
+    // DNS answer (Cloudflare can take ~2s on some names).
+    let dns_fut = dns_check(&client, &name, tld);
+    tokio::pin!(rdap_fut, dns_fut);
+    let mut dns_done = None;
+    let rdap_result = tokio::select! {
+        rdap = &mut rdap_fut => rdap,
+        dns = &mut dns_fut => { dns_done = Some(dns); rdap_fut.await }
+    };
+    let dns_result = match dns_done {
+        Some(dns) => dns,
+        None if matches!(rdap_result, Availability::Taken(_)) => Availability::Unknown,
+        None => dns_fut.await,
+    };
 
     let whois_result = if matches!(rdap_result, Availability::Unknown) {
         whois_handle.await.unwrap_or(Availability::Unknown)
@@ -282,14 +360,11 @@ async fn check_domain(client: Client, name: String, tld: &'static str, sem: Arc<
     (domain, merge_results(rdap_result, whois_result, dns_result))
 }
 
-fn format_result(domain: &str, availability: &Availability, pad: usize) -> String {
+fn format_result(domain: &str, availability: &Availability, pad: usize, prices: &pricing::Catalog) -> String {
     let padded = format!("{:<width$}", domain, width = pad);
     match availability {
         Availability::Available   => {
-            let tld = domain.rsplit('.').next().unwrap_or("");
-            let price_str = tld_price(tld)
-                .map(|p| format!("  {}/yr.", p).truecolor(100, 210, 210).to_string())
-                .unwrap_or_default();
+            let price_str = prices.label(domain).truecolor(100, 210, 210).to_string();
             let premium_str = if is_likely_premium(domain) {
                 "  ⚠ likely premium".truecolor(220, 170, 60).to_string()
             } else {
@@ -297,7 +372,7 @@ fn format_result(domain: &str, availability: &Availability, pad: usize) -> Strin
             };
             format!("  {}  {}{}{}", "✓".bright_green().bold(), padded.bright_white().bold(), price_str, premium_str)
         }
-        Availability::Protected   => format!("  {}  {}  {}", "★".bright_yellow().bold(), padded.truecolor(60, 60, 80), "brand protected".truecolor(80, 80, 100)),
+        Availability::Protected   => format!("  {}  {}  {}", "★".bright_yellow().bold(), padded.truecolor(60, 60, 80), "reserved / blocked".truecolor(80, 80, 100)),
         Availability::Unknown     => format!("  {}  {}", "?".bright_yellow(), padded.truecolor(100, 100, 80)),
         Availability::Taken(dates) => {
             let mut info = String::new();
@@ -336,9 +411,47 @@ fn generate_suggestions(keywords: &[String]) -> Vec<String> {
         names.push(keywords.join("-"));
     }
     let mut seen = std::collections::HashSet::new();
-    names.retain(|n| seen.insert(n.clone()));
-    names.truncate(14);
-    names
+    names.into_iter().filter(|name| valid_label(name) && seen.insert(name.clone())).take(14).collect()
+}
+
+// Server roots for the selected extensions' RDAP and Cloudflare DNS; never a domain path.
+fn warm_origins(tlds: &[&'static str]) -> Vec<String> {
+    let mut origins = vec!["https://cloudflare-dns.com/".to_string()];
+    for tld in tlds {
+        let Some(url) = rdap_url("x", tld).and_then(|u| reqwest::Url::parse(&u).ok()) else { continue };
+        let origin = format!("{}/", url.origin().ascii_serialization());
+        if !origins.contains(&origin) { origins.push(origin); }
+    }
+    origins
+}
+
+// Opens connections while the user types so the first interactive search skips TLS setup.
+fn warm_up(client: &Client, tlds: &[&'static str]) {
+    for origin in warm_origins(tlds) {
+        let client = client.clone();
+        tokio::spawn(async move { let _ = client.head(origin).timeout(Duration::from_secs(4)).send().await; });
+    }
+}
+
+fn print_price_note() {
+    println!("  {}", "Porkbun · USD · standard yearly estimates; premium names and checkout totals may differ.".truecolor(80, 80, 100));
+}
+
+fn farewell() -> String {
+    let keys = if cfg!(windows) {
+        ["USERNAME", "USER", "LOGNAME"]
+    } else {
+        ["USER", "LOGNAME", "USERNAME"]
+    };
+    let username = keys
+        .iter()
+        .filter_map(|key| std::env::var(key).ok())
+        .map(|name| name.trim().to_owned())
+        .find(|name| !name.is_empty() && !name.chars().any(char::is_control));
+    match username {
+        Some(name) => format!("bye {name} 🐱"),
+        None => "bye 🐱".to_owned(),
+    }
 }
 
 fn print_help() {
@@ -354,6 +467,7 @@ fn print_help() {
     row("name.tld",          "check a single domain");
     row("name+",             "suggest prefix/suffix variants");
     row("+",                 "suggest for last searched name");
+    row("/tlds",             "choose extensions for name searches");
     println!();
     println!("  {}", "watchlist".truecolor(80, 80, 100));
     row("/watch <domain>",   "get notified when a domain frees up");
@@ -361,6 +475,7 @@ fn print_help() {
     row("/list",             "show watchlist");
     println!();
     println!("  {}", "other".truecolor(80, 80, 100));
+    row("/update",           "update dott using its installation method");
     row("/help",             "show this help");
     row("exit, q",           "quit (also esc)");
     println!();
@@ -387,10 +502,17 @@ fn read_input(prompt: &str) -> Option<String> {
     print!("{}", prompt);
     io::stdout().flush().unwrap();
 
-    enable_raw_mode().unwrap();
+    if let Err(error) = enable_raw_mode() {
+        eprintln!("dott: Cannot open interactive terminal: {error}");
+        return None;
+    }
 
     let result = loop {
-        let Ok(Event::Key(key)) = event::read() else { continue };
+        let key = match event::read() {
+            Ok(Event::Key(key)) if key.kind != event::KeyEventKind::Release => key,
+            Ok(_) => continue,
+            Err(error) => { eprintln!("dott: Terminal read failed: {error}"); break None; }
+        };
         match key.code {
             KeyCode::Esc => break None,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break None,
@@ -413,7 +535,7 @@ fn read_input(prompt: &str) -> Option<String> {
         }
     };
 
-    disable_raw_mode().unwrap();
+    let _ = disable_raw_mode();
     result
 }
 
@@ -501,6 +623,8 @@ async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static st
         })
     };
 
+    let price_client = client.clone();
+    let prices = async move { pricing::load(&price_client).await }.boxed().shared();
     let task_handles: Vec<_> = tlds.iter().enumerate().map(|(i, tld)| {
         let tld = *tld;
         let client = client.clone();
@@ -509,9 +633,12 @@ async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static st
         let cache = cache.cloned();
         let io_lock = io_lock.clone();
         let done = done.clone();
+        let prices = prices.clone();
         tokio::spawn(async move {
-            let (domain, av) = check_domain_cached(client, name_s, tld, sem, cache).await;
-            let final_line = format_result(&domain, &av, pad);
+            let ((domain, av), prices) = tokio::join!(
+                check_domain_cached(client, name_s, tld, sem, cache), prices
+            );
+            let final_line = format_result(&domain, &av, pad, &prices);
             {
                 let _g = io_lock.lock().unwrap();
                 let mut out = io::stdout();
@@ -549,6 +676,7 @@ async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static st
         available_count.to_string().bright_green().bold(),
         n.to_string().truecolor(80, 80, 100),
     );
+    if available_count > 0 { print_price_note(); }
     println!("{}", "  ─────────────────────────────────────────────────────".truecolor(38, 36, 52));
     println!(
         "  {}  {}    {}  {}    {}  {}    {}  {}",
@@ -560,24 +688,9 @@ async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static st
     println!("{}", "  ─────────────────────────────────────────────────────".truecolor(38, 36, 52));
 }
 
-fn installed_via_brew() -> bool {
-    let exe = std::env::current_exe().unwrap_or_default();
-    let path = exe.to_string_lossy();
-    path.contains("/Cellar/") || path.contains("/homebrew/") || path.contains("/linuxbrew/")
-}
-
 async fn print_update(handle: tokio::task::JoinHandle<Option<String>>) {
     if let Ok(Some(version)) = handle.await {
-        let hint = if installed_via_brew() {
-            format!("brew upgrade dott  (v{})", version)
-        } else {
-            format!("github.com/yodatoshicom/dott/releases  (v{})", version)
-        };
-        println!(
-            "  {} {}\n",
-            "update available →".truecolor(100, 95, 130),
-            hint.bright_white()
-        );
+        eprintln!("  update available → {}  (v{})", update::update_hint(), version);
     }
 }
 
@@ -593,38 +706,98 @@ async fn try_print_update_if_ready(
 }
 
 fn watchlist_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_else(|_| ".".to_string());
     PathBuf::from(home).join(".dott").join("watchlist.json")
 }
 
 fn load_watchlist() -> Vec<WatchEntry> {
-    let path = watchlist_path();
-    if !path.exists() { return Vec::new(); }
-    serde_json::from_str(&fs::read_to_string(path).unwrap_or_default()).unwrap_or_default()
+    match load_watchlist_at(&watchlist_path()) {
+        Ok(entries) => entries,
+        Err(error) => {
+            eprintln!("dott: Could not read watchlist (the existing file was preserved): {error}");
+            std::process::exit(1);
+        }
+    }
 }
 
-fn save_watchlist(entries: &[WatchEntry]) {
-    let path = watchlist_path();
-    if let Some(parent) = path.parent() { let _ = fs::create_dir_all(parent); }
-    let _ = fs::write(path, serde_json::to_string_pretty(entries).unwrap_or_default());
+fn load_watchlist_at(path: &std::path::Path) -> io::Result<Vec<WatchEntry>> {
+    match fs::read(path) {
+        Ok(bytes) => serde_json::from_slice(&bytes).map_err(io::Error::other),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(error) => Err(error),
+    }
 }
 
-fn send_notification(title: &str, body: &str) {
+fn save_watchlist_at(path: &std::path::Path, entries: &[WatchEntry]) -> io::Result<()> {
+    let bytes = serde_json::to_vec_pretty(entries).map_err(io::Error::other)?;
+    let parent = path.parent().ok_or_else(|| io::Error::other("Missing watchlist directory"))?;
+    fs::create_dir_all(parent)?;
+    let id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+        .map_err(io::Error::other)?.as_nanos();
+    let temporary = parent.join(format!(".watchlist-{}-{id}.tmp", std::process::id()));
+    let result = (|| {
+        let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&temporary)?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+        fs::rename(&temporary, path)
+    })();
+    let _ = fs::remove_file(temporary);
+    result
+}
+
+fn save_watchlist(entries: &[WatchEntry]) -> Result<(), String> {
+    save_watchlist_at(&watchlist_path(), entries).map_err(|e| format!("Could not save watchlist: {e}"))
+}
+
+fn lock_watchlist_at(path: &std::path::Path) -> io::Result<fs::File> {
+    let parent = path.parent().ok_or_else(|| io::Error::other("Missing watchlist directory"))?;
+    fs::create_dir_all(parent)?;
+    let file = fs::OpenOptions::new().read(true).write(true).create(true).truncate(false)
+        .open(path.with_extension("lock"))?;
+    file.lock()?;
+    Ok(file)
+}
+
+async fn lock_watchlist() -> Result<fs::File, String> {
+    let path = watchlist_path();
+    tokio::task::spawn_blocking(move || lock_watchlist_at(&path)).await
+        .map_err(|error| format!("Could not lock watchlist: {error}"))?
+        .map_err(|error| format!("Could not lock watchlist: {error}"))
+}
+
+fn send_notification(title: &str, body: &str) -> Result<(), String> {
+    if !cfg!(target_os = "macos") { return Ok(()); }
     let script = format!("display notification {} with title {}",
         serde_json::to_string(body).unwrap_or_default(),
         serde_json::to_string(title).unwrap_or_default());
-    let _ = std::process::Command::new("osascript").arg("-e").arg(&script).output();
+    let output = std::process::Command::new("osascript").arg("-e").arg(&script)
+        .output().map_err(|e| format!("Could not send notification: {e}"))?;
+    if !output.status.success() {
+        return Err(format!("Could not send notification: {}", String::from_utf8_lossy(&output.stderr).trim()));
+    }
+    Ok(())
 }
 
-fn install_launch_agent() {
+fn install_launch_agent() -> Result<(), String> {
+    if !cfg!(target_os = "macos") { return Ok(()); }
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
     let plist_path = PathBuf::from(&home).join("Library").join("LaunchAgents").join("com.dott.watch.plist");
-    let binary = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("dott")).to_string_lossy().to_string();
+    let exe = std::env::current_exe().and_then(fs::canonicalize).map_err(|e| e.to_string())?;
+    // Use Brew's stable link, since upgrades remove versioned Cellar directories.
+    let binary = if update::installed_via_brew(&exe) {
+        exe.ancestors().find(|p| p.file_name().is_some_and(|n| n == "Cellar"))
+            .and_then(|p| p.parent()).map(|p| p.join("bin/dott")).unwrap_or(exe)
+    } else { exe }.to_string_lossy().to_string();
 
+    let binary = binary.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
     // if plist exists and already points to the current binary, leave it alone.
     // otherwise it's stale (binary moved, `brew upgrade`, `cargo install` from a new path) — unload and rewrite.
     if let Ok(existing) = fs::read_to_string(&plist_path) {
-        if existing.contains(&binary) { return; }
+        if existing.contains(&format!("<string>{binary}</string>")) {
+            let loaded = std::process::Command::new("launchctl").args(["list", "com.dott.watch"])
+                .output().map_err(|e| e.to_string())?;
+            if loaded.status.success() { return Ok(()); }
+        }
         let _ = std::process::Command::new("launchctl").arg("unload").arg(&plist_path).output();
     }
 
@@ -642,66 +815,74 @@ fn install_launch_agent() {
     <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
 </dict>
 </plist>"#);
-    if let Some(parent) = plist_path.parent() { let _ = fs::create_dir_all(parent); }
-    if fs::write(&plist_path, plist).is_ok() {
-        let _ = std::process::Command::new("launchctl").arg("load").arg(&plist_path).output();
+    if let Some(parent) = plist_path.parent() { fs::create_dir_all(parent).map_err(|e| e.to_string())?; }
+    fs::write(&plist_path, plist).map_err(|e| e.to_string())?;
+    let output = std::process::Command::new("launchctl").arg("load").arg(&plist_path)
+        .output().map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(format!("launchctl: {}", String::from_utf8_lossy(&output.stderr).trim()));
     }
+    Ok(())
 }
 
-async fn cmd_watch(client: &Client, domain: &str) {
-    if !domain.contains('.') {
-        println!("\n  {} please specify a full domain, e.g. {}\n", "!".bright_yellow(), format!("dott --watch {}.com", domain).bright_white());
-        return;
-    }
-    let domain = domain.to_lowercase();
+async fn cmd_watch(client: &Client, domain: &str) -> Result<(), String> {
+    let (name, tld) = parse_search(domain)?;
+    let tld = tld.ok_or("Please specify a full domain, e.g. myname.com")?;
+    let domain = format!("{name}.{tld}");
+    let _guard = lock_watchlist().await?;
     let mut entries = load_watchlist();
     let first_domain = entries.is_empty();
 
     if entries.iter().any(|e| e.domain == domain) {
+        install_launch_agent()?;
         println!("\n  {} {} is already being watched\n", "·".truecolor(100, 100, 120), domain.bright_white());
-        return;
+        return Ok(());
     }
 
-    let parts: Vec<&str> = domain.rsplitn(2, '.').collect();
-    let tld_str = if parts.len() == 2 { parts[0] } else { "com" };
-    let name_str = if parts.len() == 2 { parts[1] } else { domain.as_str() };
-    let tld: &'static str = ALL_TLDS.iter().find(|&&t| t == tld_str).copied().unwrap_or("com");
-    let (_, status) = check_domain(client.clone(), name_str.to_string(), tld, Arc::new(Semaphore::new(1))).await;
+    let (_, status) = check_domain(client.clone(), name, tld, Arc::new(Semaphore::new(1))).await;
     let status_str = status.as_str().to_string();
 
     entries.push(WatchEntry { domain: domain.clone(), last_status: status_str.clone() });
-    save_watchlist(&entries);
-    install_launch_agent();
+    save_watchlist(&entries)?;
+    install_launch_agent().map_err(|e| format!("Watchlist saved, but automatic monitoring could not be installed: {e}"))?;
 
     println!("\n  {} watching {}", "✓".bright_green().bold(), domain.bright_white().bold());
     if status_str == "available" {
         println!("  {} it's available right now — go register it!", "·".bright_green());
-    } else {
+    } else if cfg!(target_os = "macos") {
         println!("  {} {}", "·".truecolor(80, 80, 100), "you'll get a notification when it becomes available".truecolor(100, 100, 130));
     }
 
-    if first_domain {
-        send_notification("dott", &format!("Now watching {} — you'll be notified when it's available.", domain));
-        println!("  {} {}", "·".truecolor(80, 80, 100), "test notification sent — if you didn't see it, allow notifications for Script Editor in:".truecolor(100, 100, 130));
+    if first_domain && cfg!(target_os = "macos") {
+        if let Err(error) = send_notification("dott", &format!("Now watching {} — you'll be notified when it's available.", domain)) {
+            eprintln!("dott: {error}");
+        }
+        println!("  {} {}", "·".truecolor(80, 80, 100), "if no notification appeared, allow notifications for Script Editor in:".truecolor(100, 100, 130));
         println!("     {}", "System Settings → Notifications → Script Editor".bright_white());
         let _ = std::process::Command::new("open")
             .arg("x-apple.systempreferences:com.apple.preference.notifications")
             .output();
     }
+    if !cfg!(target_os = "macos") {
+        println!("  Automatic monitoring is available on macOS. Schedule dott --background-check to refresh the list on this platform.");
+    }
     println!();
+    Ok(())
 }
 
-async fn cmd_unwatch(domain: &str) {
-    let domain = domain.to_lowercase();
+async fn cmd_unwatch(domain: &str) -> Result<(), String> {
+    let domain = domain.trim().to_ascii_lowercase();
+    let _guard = lock_watchlist().await?;
     let mut entries = load_watchlist();
     let before = entries.len();
     entries.retain(|e| e.domain != domain);
     if entries.len() == before {
         println!("\n  {} {} not in watchlist\n", "·".truecolor(100, 100, 120), domain);
-        return;
+        return Ok(());
     }
-    save_watchlist(&entries);
+    save_watchlist(&entries)?;
     println!("\n  {} stopped watching {}\n", "✓".bright_green().bold(), domain.bright_white().bold());
+    Ok(())
 }
 
 fn cmd_watching_list() {
@@ -725,114 +906,129 @@ fn cmd_watching_list() {
     println!();
 }
 
-async fn cmd_background_check(client: &Client) {
+fn refresh_watch_entry(
+    entry: &mut WatchEntry,
+    status: &Availability,
+    notify: impl FnOnce(&str, &str) -> Result<(), String>,
+) -> Result<bool, String> {
+    let new_status = status.as_str();
+    if new_status == "unknown" || new_status == entry.last_status { return Ok(false); }
+    if new_status == "available" {
+        notify("dott — available!", &format!("{} is now available to register!", entry.domain))?;
+    }
+    entry.last_status = new_status.to_string();
+    Ok(true)
+}
+
+async fn cmd_background_check(client: &Client) -> Result<(), String> {
+    let _guard = lock_watchlist().await?;
     let mut entries = load_watchlist();
-    if entries.is_empty() { return; }
+    if entries.is_empty() { return Ok(()); }
     let sem = Arc::new(Semaphore::new(5));
-    let domains: Vec<(String, &'static str)> = entries.iter().map(|e| {
-        let parts: Vec<&str> = e.domain.rsplitn(2, '.').collect();
-        let tld_str = if parts.len() == 2 { parts[0] } else { "com" };
-        let name = if parts.len() == 2 { parts[1] } else { e.domain.as_str() };
-        let tld = ALL_TLDS.iter().find(|&&t| t == tld_str).copied().unwrap_or("com");
-        (name.to_string(), tld)
+    // Keep unsupported or malformed legacy entries rather than checking a different domain.
+    let domains: Vec<_> = entries.iter().enumerate().filter_map(|(index, e)| {
+        let (name, tld) = parse_search(&e.domain).ok()?;
+        Some((index, name, tld?))
     }).collect();
-    let tasks: Vec<_> = domains.iter().map(|(name, tld)| {
+    let tasks: Vec<_> = domains.iter().map(|(_, name, tld)| {
         check_domain(client.clone(), name.clone(), tld, sem.clone())
     }).collect();
     let results = join_all(tasks).await;
     let mut changed = false;
-    for (entry, (_, status)) in entries.iter_mut().zip(results.iter()) {
-        let new_status = status.as_str();
-        if new_status != entry.last_status {
-            if new_status == "available" {
-                send_notification("dott — available!", &format!("{} is now available to register!", entry.domain));
-            }
-            entry.last_status = new_status.to_string();
-            changed = true;
+    let mut errors = Vec::new();
+    for ((index, _, _), (_, status)) in domains.iter().zip(results.iter()) {
+        let entry = &mut entries[*index];
+        match refresh_watch_entry(entry, status, send_notification) {
+            Ok(updated) => changed |= updated,
+            Err(error) => errors.push(format!("{}: {error}", entry.domain)),
         }
     }
-    if changed { save_watchlist(&entries); }
-}
-
-async fn check_for_update(client: Client) -> Option<String> {
-    let res = client
-        .get("https://api.github.com/repos/yodatoshicom/dott/releases/latest")
-        .header("User-Agent", "dott")
-        .timeout(Duration::from_secs(3))
-        .send().await.ok()?;
-    let json: serde_json::Value = res.json().await.ok()?;
-    let latest = json["tag_name"].as_str()?.trim_start_matches('v').to_string();
-    let current = env!("CARGO_PKG_VERSION");
-    let parse_ver = |s: &str| -> Option<(u32, u32, u32)> {
-        let mut parts = s.split('.');
-        Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
-    };
-    if parse_ver(&latest)? > parse_ver(current)? { Some(latest) } else { None }
+    if changed { save_watchlist(&entries)?; }
+    if errors.is_empty() { Ok(()) } else { Err(errors.join("; ")) }
 }
 
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
     let client = Client::new();
+    if cli.update {
+        if let Err(error) = update::run(&client).await {
+            eprintln!("dott: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    let plain = cli.plain || !io::stdout().is_terminal();
+    let selected_tlds = cli.tlds.as_deref().map(parse_tlds).transpose().unwrap_or_else(|error| {
+        eprintln!("dott: {error}"); std::process::exit(1);
+    });
 
-    if cli.background_check { cmd_background_check(&client).await; return; }
-    if let Some(ref domain) = cli.watch    { cmd_watch(&client, domain).await; return; }
-    if let Some(ref domain) = cli.unwatch  { cmd_unwatch(domain).await; return; }
+    if cli.background_check { finish_command(cmd_background_check(&client).await); return; }
+    if let Some(ref domain) = cli.watch    { finish_command(cmd_watch(&client, domain).await); return; }
+    if let Some(ref domain) = cli.unwatch  { finish_command(cmd_unwatch(domain).await); return; }
     if cli.watching { cmd_watching_list(); return; }
 
     // ── pipe mode: read names from stdin, always plain output ──
-    if cli.name.is_none() && cli.suggest.is_none() && !io::stdin().is_terminal() {
-        let default_tlds: Vec<&'static str> = if let Some(ref t) = cli.tlds {
-            t.split(',').filter_map(|s| ALL_TLDS.iter().find(|&&x| x == s.trim()).copied()).collect()
-        } else {
-            ALL_TLDS.to_vec()
-        };
+    if cli.name.is_none() && cli.suggest.is_none() && (!io::stdin().is_terminal() || plain) {
         for line in io::stdin().lock().lines() {
             let Ok(line) = line else { continue };
             let line = line.trim();
             if line.is_empty() { continue; }
-            let (name, tlds) = if let Some(dot) = line.rfind('.') {
-                let tld_str = &line[dot+1..];
-                match ALL_TLDS.iter().find(|&&t| t == tld_str).copied() {
-                    Some(tld) => (line[..dot].to_string(), vec![tld]),
-                    None => continue,
-                }
-            } else {
-                (line.to_string(), default_tlds.clone())
+            let (name, explicit_tld) = match parse_search(line) {
+                Ok(search) => search,
+                Err(error) => { eprintln!("dott: {error}"); std::process::exit(1); }
             };
+            let tlds = search_tlds(explicit_tld, selected_tlds.as_deref());
             search_and_print(&client, &name, tlds, true, None).await;
         }
         return;
     }
 
     let mut update_check: Option<tokio::task::JoinHandle<Option<String>>> =
-        Some(tokio::spawn(check_for_update(client.clone())));
+        if !plain && io::stdin().is_terminal() && std::env::var_os("DOTT_NO_UPDATE_CHECK").is_none() {
+            Some(tokio::spawn(update::check_for_update(client.clone())))
+        } else { None };
+
+    // Saved /tlds choices apply to terminal searches only; --tlds overrides them for this run.
+    let mut active_tlds = selected_tlds.or_else(|| if plain { None } else { extensions::load() });
 
     // ── one-shot mode ──────────────────────────────────────────
     if let Some(keywords) = cli.suggest {
-        println!();
-        println!("{}", "  · d o t t ·".bright_magenta().bold());
-        println!();
-        println!("  {} {}\n", "generating for:".truecolor(80, 80, 100), keywords.join(", ").bright_white());
+        let keywords: Vec<String> = keywords.iter().flat_map(|s| s.split_whitespace())
+            .map(str::to_ascii_lowercase).collect();
+        if keywords.is_empty() || keywords.iter().any(|s| !valid_label(s)) {
+            eprintln!("dott: Suggestion keywords must be valid domain labels.");
+            std::process::exit(1);
+        }
+        if !plain {
+            println!();
+            println!("{}", "  · d o t t ·".bright_magenta().bold());
+            println!();
+            println!("  {} {}\n", "generating for:".truecolor(80, 80, 100), keywords.join(", ").bright_white());
+        }
         let suggestions = generate_suggestions(&keywords);
-        let tlds: Vec<&'static str> = vec!["com", "io", "dev", "app", "co"];
+        let tlds = active_tlds.clone().unwrap_or_else(|| vec!["com", "io", "dev", "app", "co"]);
         let sem = Arc::new(Semaphore::new(10));
         let tasks: Vec<_> = suggestions.iter().flat_map(|name| {
             let name = name.clone(); let client = client.clone(); let sem = sem.clone();
             tlds.iter().map(move |tld| check_domain(client.clone(), name.clone(), tld, sem.clone()))
         }).collect();
-        let results = join_all(tasks).await;
+        let (results, prices) = tokio::join!(join_all(tasks), async {
+            if plain { None } else { Some(pricing::load(&client).await) }
+        });
         let available: Vec<&str> = results.iter()
             .filter(|(_, a)| matches!(a, Availability::Available))
             .map(|(d, _)| d.as_str()).collect();
-        if cli.plain {
+        if plain {
             for (domain, av) in &results {
                 println!("{} {}", domain, av.as_str());
             }
         } else if available.is_empty() {
             println!("  {} nothing available\n", "✗".truecolor(80, 80, 100));
         } else {
-            for d in &available { println!("  {}  {}", "✓".bright_green().bold(), d.bright_white().bold()); }
+            let prices = prices.as_ref().expect("Terminal output has a pricing catalog");
+            for d in &available { println!("{}", format_result(d, &Availability::Available, 0, prices)); }
+            print_price_note();
             println!("\n  {} available\n", available.len().to_string().bright_green().bold());
         }
         if let Some(h) = update_check.take() { print_update(h).await; }
@@ -840,22 +1036,29 @@ async fn main() {
     }
 
     if let Some(raw) = cli.name {
-        println!();
-        println!("{}", "  · d o t t ·".bright_magenta().bold());
-        println!();
-        let name = if let Some(dot) = raw.find('.') { raw[..dot].to_string() } else { raw };
-        let tld_list: Vec<&'static str> = if let Some(ref t) = cli.tlds {
-            t.split(',').filter_map(|s| ALL_TLDS.iter().find(|&&x| x == s.trim()).copied()).collect()
-        } else {
-            ALL_TLDS.to_vec()
+        if !plain {
+            println!();
+            println!("{}", "  · d o t t ·".bright_magenta().bold());
+            println!();
+        }
+        let (name, explicit_tld) = match parse_search(&raw) {
+            Ok(search) => search,
+            Err(error) => { eprintln!("dott: {error}"); std::process::exit(1); }
         };
-        search_and_print(&client, &name, tld_list, cli.plain, None).await;
+        let tld_list = search_tlds(explicit_tld, active_tlds.as_deref());
+        search_and_print(&client, &name, tld_list, plain, None).await;
         if let Some(h) = update_check.take() { print_update(h).await; }
         return;
     }
 
     // ── interactive mode ───────────────────────────────────────
     print_cat();
+    println!("{}\n", extensions::summary(active_tlds.as_deref()));
+    warm_up(&client, active_tlds.as_deref().unwrap_or(ALL_TLDS));
+    tokio::spawn({
+        let client = client.clone();
+        async move { pricing::load(&client).await; }
+    });
 
     let cache = new_cache();
     let mut last_name: Option<String> = None;
@@ -864,15 +1067,15 @@ async fn main() {
         let prompt = format!("  {} ", "›".bright_magenta().bold());
         match read_input(&prompt) {
             None => {
-                println!("\n  {}\n", "bye 🐱".truecolor(180, 140, 200));
+                println!("\n  {}\n", farewell().truecolor(180, 140, 200));
                 if let Some(h) = update_check.take() { print_update(h).await; }
                 break;
             }
             Some(input) => {
-                let input = input.trim().to_string();
+                let input = input.trim().to_ascii_lowercase();
                 if input.is_empty() { continue; }
                 if input == "exit" || input == "quit" || input == "q" {
-                    println!("\n  {}\n", "bye 🐱".truecolor(180, 140, 200));
+                    println!("\n  {}\n", farewell().truecolor(180, 140, 200));
                     if let Some(h) = update_check.take() { print_update(h).await; }
                     break;
                 }
@@ -887,14 +1090,15 @@ async fn main() {
                                 continue;
                             }
                         }
-                    } else if let Some(dot) = raw.find('.') {
-                        raw[..dot].to_string()
                     } else {
-                        raw.to_string()
+                        match parse_search(raw) {
+                            Ok((name, _)) => name,
+                            Err(error) => { eprintln!("dott: {error}"); continue; }
+                        }
                     };
                     println!("  {} {}", "suggesting for:".truecolor(80, 80, 100), name.bright_white());
                     let suggestions = generate_suggestions(std::slice::from_ref(&name));
-                    let tlds: Vec<&'static str> = vec!["com", "io", "dev", "app", "co"];
+                    let tlds = active_tlds.clone().unwrap_or_else(|| vec!["com", "io", "dev", "app", "co"]);
                     let sem = Arc::new(Semaphore::new(10));
                     let tasks: Vec<_> = suggestions.iter().flat_map(|n| {
                         let n = n.clone();
@@ -903,7 +1107,7 @@ async fn main() {
                         let cache = cache.clone();
                         tlds.iter().map(move |tld| check_domain_cached(client.clone(), n.clone(), tld, sem.clone(), Some(cache.clone())))
                     }).collect();
-                    let results = join_all(tasks).await;
+                    let (results, prices) = tokio::join!(join_all(tasks), pricing::load(&client));
                     let available: Vec<&str> = results.iter()
                         .filter(|(_, a)| matches!(a, Availability::Available))
                         .map(|(d, _)| d.as_str())
@@ -913,9 +1117,10 @@ async fn main() {
                         println!("  {}  nothing available\n", "✗".truecolor(80, 80, 100));
                     } else {
                         for d in &available {
-                            println!("  {}  {}", "✓".bright_green().bold(), d.bright_white().bold());
+                            println!("{}", format_result(d, &Availability::Available, 0, &prices));
                         }
                         println!();
+                        print_price_note();
                         println!("  {} available\n", available.len().to_string().bright_green().bold());
                     }
                     try_print_update_if_ready(&mut update_check).await;
@@ -924,29 +1129,49 @@ async fn main() {
 
                 // /watch <domain>, /unwatch <domain>, /list
                 if let Some(domain) = input.strip_prefix("/watch ") {
-                    cmd_watch(&client, domain.trim()).await;
+                    if let Err(error) = cmd_watch(&client, domain.trim()).await { eprintln!("dott: {error}"); }
                     continue;
                 }
                 if let Some(domain) = input.strip_prefix("/unwatch ") {
-                    cmd_unwatch(domain.trim()).await;
+                    if let Err(error) = cmd_unwatch(domain.trim()).await { eprintln!("dott: {error}"); }
                     continue;
                 }
                 if input == "/list" {
                     cmd_watching_list();
                     continue;
                 }
+                if input == "/tlds" {
+                    match extensions::select(active_tlds.as_deref().unwrap_or(ALL_TLDS)) {
+                        Ok(Some(chosen)) => {
+                            if let Err(error) = extensions::save(&chosen) { eprintln!("dott: {error}"); }
+                            warm_up(&client, &chosen);
+                            active_tlds = Some(chosen);
+                            println!("{}\n", extensions::summary(active_tlds.as_deref()));
+                        }
+                        Ok(None) => {}
+                        Err(error) => eprintln!("dott: Cannot open extension selector: {error}"),
+                    }
+                    continue;
+                }
                 if input == "/help" {
                     print_help();
                     continue;
                 }
+                if input == "/update" {
+                    // Discard the startup notice: an explicit update supersedes it.
+                    if let Some(handle) = update_check.take() { handle.abort(); }
+                    if let Err(error) = update::run(&client).await {
+                        eprintln!("dott: {error}");
+                    }
+                    continue;
+                }
 
-                // strip TLD if included
-                let name = if let Some(dot) = input.find('.') {
-                    input[..dot].to_string()
-                } else {
-                    input
+                let (name, explicit_tld) = match parse_search(&input) {
+                    Ok(search) => search,
+                    Err(error) => { eprintln!("dott: {error}"); continue; }
                 };
-                search_and_print(&client, &name, ALL_TLDS.to_vec(), false, Some(&cache)).await;
+                let tlds = search_tlds(explicit_tld, active_tlds.as_deref());
+                search_and_print(&client, &name, tlds, false, Some(&cache)).await;
                 last_name = Some(name);
 
                 println!();
@@ -956,9 +1181,116 @@ async fn main() {
     }
 }
 
+fn finish_command(result: Result<(), String>) {
+    if let Err(error) = result {
+        eprintln!("dott: {error}");
+        std::process::exit(1);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn full_domains_and_tld_lists_are_normalized_and_validated() {
+        assert_eq!(parse_search(" MyName.IO ").unwrap(), ("myname".into(), Some("io")));
+        assert_eq!(parse_search("MyName").unwrap(), ("myname".into(), None));
+        assert_eq!(parse_tlds("COM, io,com").unwrap(), vec!["com", "io"]);
+        assert!(parse_tlds("com,no-such-tld").is_err());
+        assert!(parse_tlds("").is_err());
+        for input in ["", "-name", "name-", "name with spaces", "sub.name.com", "name.invalid", "name/com", "💩.com"] {
+            assert!(parse_search(input).is_err(), "{input}");
+        }
+        assert_eq!(search_tlds(Some("bot"), Some(&["com", "io"])), vec!["bot"]);
+        assert_eq!(search_tlds(None, Some(&["com", "io"])), vec!["com", "io"]);
+        assert_eq!(search_tlds(None, None), ALL_TLDS.to_vec());
+        assert!(valid_label(&"a".repeat(63)));
+        assert!(!valid_label(&"a".repeat(64)));
+    }
+
+    #[test]
+    fn whois_boilerplate_does_not_mean_available_or_reserved() {
+        assert!(matches!(parse_whois("WHOIS service not available", "com"), Availability::Unknown));
+        assert!(matches!(parse_whois("No match for example.com\nAll rights reserved", "com"), Availability::Available));
+        assert!(matches!(parse_whois("Status: reserved", "com"), Availability::Protected));
+        assert!(matches!(parse_whois("Domain Name: EXAMPLE.COM\nNames may be available", "com"), Availability::Taken(_)));
+        let so_missing = "Domain Name: zqxdott21.so\nThe queried object does not exist: No Object Found\n";
+        assert!(matches!(parse_whois(so_missing, "so"), Availability::Available));
+    }
+
+    #[test]
+    fn bot_domains_use_the_registry_endpoint_and_supported_tld_selection() {
+        assert_eq!(parse_search("Example.BOT").unwrap(), ("example".into(), Some("bot")));
+        assert_eq!(parse_tlds("com,bot").unwrap(), vec!["com", "bot"]);
+        assert_eq!(rdap_url("example", "bot").unwrap(), "https://rdap.nominet.uk/bot/domain/example.bot");
+        assert!(tld_rank("example.bot") < 99);
+    }
+
+    #[test]
+    fn watch_notifications_retry_failures_and_ignore_inconclusive_results() {
+        let mut entry = WatchEntry { domain: "example.com".into(), last_status: "taken".into() };
+        assert!(!refresh_watch_entry(&mut entry, &Availability::Unknown, |_, _| panic!("unknown must not notify")).unwrap());
+        assert_eq!(entry.last_status, "taken");
+        assert!(!refresh_watch_entry(&mut entry, &Availability::Taken(DomainDates::default()), |_, _| panic!("unchanged must not notify")).unwrap());
+        assert!(refresh_watch_entry(&mut entry, &Availability::Available, |_, _| Err("osascript failed".into())).is_err());
+        assert_eq!(entry.last_status, "taken", "failed notification must be retried");
+        assert!(refresh_watch_entry(&mut entry, &Availability::Available, |title, body| {
+            assert_eq!(title, "dott — available!");
+            assert!(body.contains("example.com"));
+            Ok(())
+        }).unwrap());
+        assert_eq!(entry.last_status, "available");
+        assert!(!refresh_watch_entry(&mut entry, &Availability::Unknown, |_, _| panic!("outage must not notify")).unwrap());
+        assert!(!refresh_watch_entry(&mut entry, &Availability::Available, |_, _| panic!("must not notify twice")).unwrap());
+        assert!(refresh_watch_entry(&mut entry, &Availability::Protected, |_, _| panic!("protected must not notify")).unwrap());
+        assert_eq!(entry.last_status, "protected");
+    }
+
+    #[test]
+    fn watchlist_persistence_reports_corruption_and_failed_writes() {
+        let path = std::env::temp_dir().join(format!("dott-watch-test-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        fs::create_dir(&path).unwrap();
+        let file = path.join("watchlist.json");
+        assert!(load_watchlist_at(&file).unwrap().is_empty());
+        let entries = vec![WatchEntry { domain: "example.com".into(), last_status: "taken".into() }];
+        save_watchlist_at(&file, &entries).unwrap();
+        let loaded = load_watchlist_at(&file).unwrap();
+        assert_eq!(loaded[0].domain, "example.com");
+        fs::write(&file, b"not json").unwrap();
+        assert!(load_watchlist_at(&file).is_err());
+        assert_eq!(fs::read(&file).unwrap(), b"not json");
+        assert!(save_watchlist_at(&path, &entries).is_err());
+        assert_eq!(fs::read_dir(&path).unwrap().count(), 1);
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn malformed_rdap_success_is_inconclusive() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/domain/example.com", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut connection, _) = listener.accept().unwrap();
+            connection.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+            let mut request = [0; 1024];
+            connection.read(&mut request).unwrap();
+            connection.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}").unwrap();
+        });
+        let result = http_query(&Client::builder().no_proxy().build().unwrap(), &url, &Semaphore::new(1)).await;
+        server.join().unwrap();
+        assert!(matches!(result, Some(Availability::Unknown)), "a response must not trigger the rdap.org retry");
+    }
+
+    #[tokio::test]
+    async fn only_unreachable_rdap_servers_are_retried() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/domain/example.com", listener.local_addr().unwrap());
+        drop(listener);
+        let result = http_query(&Client::builder().no_proxy().build().unwrap(), &url, &Semaphore::new(1)).await;
+        assert!(result.is_none());
+    }
 
     #[test]
     fn parse_date_iso() {
@@ -1033,6 +1365,28 @@ mod tests {
                 assert_eq!(d.expires.as_deref(),    Some("2026-01-01")); // RDAP wins
             }
             _ => panic!("expected Taken"),
+        }
+    }
+
+    #[test]
+    fn warm_up_targets_only_selected_servers_without_domains() {
+        assert_eq!(warm_origins(&["com", "net"]), vec!["https://cloudflare-dns.com/", "https://rdap.verisign.com/"]);
+        assert_eq!(warm_origins(&["sh", "gg"]), vec!["https://cloudflare-dns.com/"], "WHOIS-only extensions");
+        let all = warm_origins(ALL_TLDS);
+        assert!(all.iter().all(|o| o.ends_with(".com/") || o.ends_with(".org/") || o.ends_with(".services/")
+            || o.ends_with(".google/") || o.ends_with(".cv/") || o.ends_with(".uk/")), "{all:?}");
+        assert!(all.iter().all(|o| !o.contains("domain")));
+    }
+
+    #[test]
+    fn rdap_taken_does_not_depend_on_dns() {
+        // check_domain skips waiting for DNS once RDAP says taken; the merge must agree.
+        let rdap = || Availability::Taken(dates_with_expiry("2027-01-01"));
+        for dns in [Availability::Taken(DomainDates::default()), Availability::Unknown] {
+            match merge_results(rdap(), Availability::Unknown, dns) {
+                Availability::Taken(d) => assert_eq!(d.expires.as_deref(), Some("2027-01-01")),
+                _ => panic!("expected Taken with RDAP dates"),
+            }
         }
     }
 

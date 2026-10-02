@@ -8,7 +8,9 @@ pub fn parse_date(s: &str) -> Option<String> {
             && b[i + 7] == b'-'
             && b[i + 8..i + 10].iter().all(|c| c.is_ascii_digit())
         {
-            return Some(s[i..i + 10].to_string());
+            let date = &s[i..i + 10];
+            let parts: Vec<i64> = date.split('-').map(|p| p.parse().unwrap()).collect();
+            if valid_date(parts[0], parts[1], parts[2]) { return Some(date.to_string()); }
         }
     }
     None
@@ -55,7 +57,9 @@ pub fn parse_prose_date(s: &str) -> Option<String> {
         if !(1900..2100).contains(&year) {
             continue;
         }
-        return Some(format!("{:04}-{:02}-{:02}", year, month_idx + 1, day));
+        if valid_date(year.into(), (month_idx + 1) as i64, day.into()) {
+            return Some(format!("{:04}-{:02}-{:02}", year, month_idx + 1, day));
+        }
     }
     None
 }
@@ -68,11 +72,24 @@ pub fn date_to_epoch_days(y: i64, m: i64, d: i64) -> i64 {
     jdn - 2440588
 }
 
+fn valid_date(y: i64, m: i64, d: i64) -> bool {
+    if !(1..=9999).contains(&y) || !(1..=12).contains(&m) { return false; }
+    let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+    let max_day = match m {
+        2 if leap => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    };
+    (1..=max_day).contains(&d)
+}
+
 pub fn days_until(date_str: &str) -> Option<i64> {
     let p: Vec<i64> = date_str
         .splitn(3, '-')
         .map(|s| s.parse().ok())
         .collect::<Option<Vec<_>>>()?;
+    if p.len() != 3 || !valid_date(p[0], p[1], p[2]) { return None; }
     let target = date_to_epoch_days(p[0], p[1], p[2]);
     let today = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -80,4 +97,17 @@ pub fn days_until(date_str: &str) -> Option<i64> {
         .as_secs() as i64
         / 86400;
     Some(target - today)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn malformed_dates_do_not_panic_or_roll_over() {
+        for date in ["2026", "2026-01", "", "2026-00-01", "2026-13-01", "2026-02-29", "2026-04-31", "999999999999-01-01"] {
+            assert_eq!(days_until(date), None, "{date}");
+        }
+        assert!(days_until("2028-02-29").is_some());
+    }
 }

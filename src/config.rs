@@ -1,6 +1,6 @@
 pub const ALL_TLDS: &[&str] = &[
     "com", "net", "org", "io", "dev", "app", "co", "ai", "me", "so", "gg", "cc", "cv", "xyz",
-    "live", "computer", "sh", "fm", "fyi", "work",
+    "live", "computer", "sh", "fm", "fyi", "work", "bot",
 ];
 
 pub fn tld_rank(domain: &str) -> u8 {
@@ -26,6 +26,7 @@ pub fn tld_rank(domain: &str) -> u8 {
         "fm" => 17,
         "fyi" => 18,
         "work" => 19,
+        "bot" => 20,
         _ => 99,
     }
 }
@@ -37,33 +38,6 @@ pub fn is_likely_premium(domain: &str) -> bool {
         return false;
     };
     name.len() <= 4 && matches!(tld, "ai" | "io" | "app" | "dev" | "co" | "cv")
-}
-
-pub fn tld_price(tld: &str) -> Option<&'static str> {
-    // Registration prices from Porkbun, May 2026
-    match tld {
-        "com" => Some("$11.08"),
-        "net" => Some("$12.52"),
-        "org" => Some("$10.74"),
-        "io" => Some("$51.80"),
-        "dev" => Some("$12.87"),
-        "app" => Some("$14.93"),
-        "co" => Some("$27.09"),
-        "ai" => Some("$82.70"),
-        "me" => Some("$17.27"),
-        "so" => Some("€55.22"),
-        "gg" => Some("$51.80"),
-        "cc" => Some("$8.55"),
-        "xyz" => Some("$12.98"),
-        "cv" => Some("$8.03"),
-        "live" => Some("$26.26"),
-        "computer" => Some("$31.41"),
-        "sh" => Some("$46.65"),
-        "fm" => Some("$87.85"),
-        "fyi" => Some("$5.66"),
-        "work" => Some("$10.81"),
-        _ => None,
-    }
 }
 
 pub fn rdap_url(name: &str, tld: &str) -> Option<String> {
@@ -82,6 +56,7 @@ pub fn rdap_url(name: &str, tld: &str) -> Option<String> {
         "cc" => Some(format!("https://tld-rdap.verisign.com/cc/v1/domain/{}.{}", name, tld)),
         "xyz" | "fm" => Some(format!("https://rdap.centralnic.com/{}/domain/{}.{}", tld, name, tld)),
         "cv" => Some(format!("https://rdap.nic.cv/domain/{}.{}", name, tld)),
+        "bot" => Some(format!("https://rdap.nominet.uk/bot/domain/{}.{}", name, tld)),
         "sh" | "gg" => None, // RDAP endpoints don't work — use WHOIS only
         _ => Some(format!("https://rdap.org/domain/{}.{}", name, tld)),
     }
