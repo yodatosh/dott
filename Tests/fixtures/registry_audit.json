@@ -1,0 +1,4540 @@
+{
+  "captured_at": "2026-10-26T11:49:22.179686+00:00",
+  "iana_publication": "2026-10-22T23:00:04Z",
+  "probe": "dott-audit-1793015340682304000",
+  "targets": [
+    {
+      "tld": "ai",
+      "rdap": "https://rdap.identitydigital.services/rdap/domain/AUDIT_LABEL.ai",
+      "whois": "whois.nic.ai",
+      "dpml": "",
+      "iana": [
+        "https://rdap.identitydigital.services/rdap/"
+      ],
+      "samples": [
+        {
+          "domain": "nic.ai",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.identitydigital.services/rdap/domain/nic.ai",
+            "http": 200,
+            "final_url": "https://rdap.identitydigital.services/rdap/domain/nic.ai",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "nic.ai",
+              "unicodeName": "nic.ai",
+              "status": [
+                "client delete prohibited",
+                "server delete prohibited",
+                "client renew prohibited",
+                "server renew prohibited",
+                "client transfer prohibited",
+                "server transfer prohibited",
+                "client update prohibited",
+                "server update prohibited"
+              ],
+              "events": [
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2027-12-13T01:14:21Z"
+                },
+                {
+                  "eventAction": "registration",
+                  "eventDate": "2017-12-16T01:14:21Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2026-08-12T10:00:38.422Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T11:49:05.462Z"
+                }
+              ]
+            }
+          },
+          "whois": {
+            "server": "whois.nic.ai",
+            "body": "Domain Name: nic.ai\nRegistry Domain ID: 5ff032b7dd2f49d899c246a6937ea818-DONUTS\nUpdated Date: 2026-08-12T10:00:38Z\nCreation Date: 2017-12-16T01:14:21Z\nRegistry Expiry Date: 2027-12-13T01:14:21Z\nDomain Status: clientDeleteProhibited https://icann.org/epp#clientDeleteProhibited\nDomain Status: serverDeleteProhibited https://icann.org/epp#serverDeleteProhibited\nDomain Status: clientRenewProhibited https://icann.org/epp#clientRenewProhibited\nDomain Status: serverRenewProhibited https://icann.org/epp#serverRenewProhibited\nDomain Status: clientTransferProhibited https://icann.org/epp#clientTransferProhibited\nDomain Status: serverTransferProhibited https://icann.org/epp#serverTransferProhibited\nDomain Status: clientUpdateProhibited https://icann.org/epp#clientUpdateProhibited\nDomain Status: serverUpdateProhibited https://icann.org/epp#serverUpdateProhibited",
+            "raw_bytes": 5601,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=nic.ai&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=nic.ai&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "nic.ai",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "v0n0.nic.ai."
+                },
+                {
+                  "name": "nic.ai",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "v0n1.nic.ai."
+                },
+                {
+                  "name": "nic.ai",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "v0n2.nic.ai."
+                },
+                {
+                  "name": "nic.ai",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "v0n3.nic.ai."
+                },
+                {
+                  "name": "nic.ai",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "v2n0.nic.ai."
+                },
+                {
+                  "name": "nic.ai",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "v2n1.nic.ai."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "whois_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.ai",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.identitydigital.services/rdap/domain/dott-audit-1793015340682304000.ai",
+            "http": 404,
+            "final_url": "https://rdap.identitydigital.services/rdap/domain/dott-audit-1793015340682304000.ai",
+            "body": {
+              "errorCode": 404,
+              "title": "Object not found",
+              "description": [
+                "Object not found"
+              ]
+            }
+          },
+          "whois": {
+            "server": "whois.nic.ai",
+            "body": "Domain not found.",
+            "raw_bytes": 2759,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.ai&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.ai&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "ai",
+                  "type": 6,
+                  "TTL": 3600,
+                  "data": "v0n0.nic.ai. hostmaster.donuts.email. 1793014870 7200 900 1209600 3600"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "whois_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "app",
+      "rdap": "https://pubapi.registry.google/rdap/domain/AUDIT_LABEL.app",
+      "whois": "",
+      "dpml": "",
+      "iana": [
+        "https://pubapi.registry.google/rdap/"
+      ],
+      "samples": [
+        {
+          "domain": "nic.app",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://pubapi.registry.google/rdap/domain/nic.app",
+            "http": 200,
+            "final_url": "https://pubapi.registry.google/rdap/domain/nic.app",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "nic.app",
+              "status": [
+                "server delete prohibited",
+                "server transfer prohibited",
+                "server update prohibited"
+              ],
+              "events": [
+                {
+                  "eventAction": "registration",
+                  "eventActor": "CharlestonRoad",
+                  "eventDate": "2015-06-22T20:34:34.653Z"
+                },
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2027-06-22T20:34:34.653Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T11:49:04.284Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2026-08-06T20:34:34.653Z"
+                }
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=nic.app&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=nic.app&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "nic.app",
+                  "type": 2,
+                  "TTL": 345600,
+                  "data": "ns4.google.com."
+                },
+                {
+                  "name": "nic.app",
+                  "type": 2,
+                  "TTL": 345600,
+                  "data": "ns2.google.com."
+                },
+                {
+                  "name": "nic.app",
+                  "type": 2,
+                  "TTL": 345600,
+                  "data": "ns3.google.com."
+                },
+                {
+                  "name": "nic.app",
+                  "type": 2,
+                  "TTL": 345600,
+                  "data": "ns1.google.com."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.app",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://pubapi.registry.google/rdap/domain/dott-audit-1793015340682304000.app",
+            "http": 404,
+            "final_url": "https://pubapi.registry.google/rdap/domain/dott-audit-1793015340682304000.app",
+            "body": {
+              "errorCode": 404,
+              "title": "Not Found",
+              "description": [
+                "dott-audit-1793015340682304000.app not found"
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.app&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.app&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "app",
+                  "type": 6,
+                  "TTL": 900,
+                  "data": "ns-tld1.charlestonroadregistry.com. cloud-dns-hostmaster.google.com. 101427 21600 3600 259200 900"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "bot",
+      "rdap": "https://rdap.nominet.uk/bot/domain/AUDIT_LABEL.bot",
+      "whois": "",
+      "dpml": "",
+      "iana": [
+        "https://rdap.nominet.uk/bot/"
+      ],
+      "samples": [
+        {
+          "domain": "amazon.bot",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.nominet.uk/bot/domain/amazon.bot",
+            "http": 200,
+            "final_url": "https://rdap.nominet.uk/bot/domain/amazon.bot",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "amazon.bot",
+              "unicodeName": "amazon.bot",
+              "status": [
+                "client transfer prohibited",
+                "client update prohibited",
+                "client delete prohibited"
+              ],
+              "events": [
+                {
+                  "eventAction": "registration",
+                  "eventActor": "470",
+                  "eventDate": "2017-05-31T20:13:23.055Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventActor": "470",
+                  "eventDate": "2026-07-22T08:00:32Z"
+                },
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2027-05-31T20:13:23.055Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T11:49:15.857382553Z"
+                }
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=amazon.bot&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=amazon.bot&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "amazon.bot",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "nsgbr.comlaude.co.uk."
+                },
+                {
+                  "name": "amazon.bot",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "nssui.comlaude.ch."
+                },
+                {
+                  "name": "amazon.bot",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "nsusa.comlaude.net."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.bot",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.nominet.uk/bot/domain/dott-audit-1793015340682304000.bot",
+            "http": 404,
+            "final_url": "https://rdap.nominet.uk/bot/domain/dott-audit-1793015340682304000.bot",
+            "body": {
+              "errorCode": 404,
+              "title": "Domain dott-audit-1793015340682304000.bot not found"
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.bot&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.bot&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "bot",
+                  "type": 6,
+                  "TTL": 60,
+                  "data": "dns1.nic.bot. hostmaster.nominet.org.uk. 1793015104 900 300 2419200 60"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "cc",
+      "rdap": "https://tld-rdap.verisign.com/cc/v1/domain/AUDIT_LABEL.cc",
+      "whois": "whois.nic.cc",
+      "dpml": "",
+      "iana": [
+        "https://tld-rdap.verisign.com/cc/v1/"
+      ],
+      "samples": [
+        {
+          "domain": "nic.cc",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://tld-rdap.verisign.com/cc/v1/domain/nic.cc",
+            "http": 200,
+            "final_url": "https://tld-rdap.verisign.com/cc/v1/domain/nic.cc",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "NIC.CC",
+              "status": [
+                "client transfer prohibited",
+                "server delete prohibited",
+                "server transfer prohibited",
+                "server update prohibited"
+              ],
+              "events": [
+                {
+                  "eventAction": "registration",
+                  "eventDate": "1997-10-01T04:00:00Z"
+                },
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2026-12-31T05:00:00Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2025-11-29T05:58:50Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T11:49:01Z"
+                }
+              ]
+            }
+          },
+          "whois": {
+            "server": "whois.nic.cc",
+            "body": "   Domain Name: NIC.CC\n   Registry Domain ID: 86413629_DOMAIN_CC-VRSN\n   Updated Date: 2025-11-29T05:58:50Z\n   Creation Date: 1997-10-01T04:00:00Z\n   Registry Expiry Date: 2026-12-31T05:00:00Z\n   Domain Status: clientTransferProhibited https://icann.org/epp#clientTransferProhibited\n   Domain Status: serverDeleteProhibited https://icann.org/epp#serverDeleteProhibited\n   Domain Status: serverTransferProhibited https://icann.org/epp#serverTransferProhibited\n   Domain Status: serverUpdateProhibited https://icann.org/epp#serverUpdateProhibited",
+            "raw_bytes": 3271,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=nic.cc&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=nic.cc&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "nic.cc",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "av3.nstld.com."
+                },
+                {
+                  "name": "nic.cc",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "av1.nstld.com."
+                },
+                {
+                  "name": "nic.cc",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "av4.nstld.com."
+                },
+                {
+                  "name": "nic.cc",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "av2.nstld.com."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "whois_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.cc",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://tld-rdap.verisign.com/cc/v1/domain/dott-audit-1793015340682304000.cc",
+            "http": 404,
+            "final_url": "https://tld-rdap.verisign.com/cc/v1/domain/dott-audit-1793015340682304000.cc",
+            "invalid_json": true
+          },
+          "whois": {
+            "server": "whois.nic.cc",
+            "body": "No match for \"DOTT-AUDIT-1793015340682304000.CC\".",
+            "raw_bytes": 2190,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.cc&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.cc&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "cc",
+                  "type": 6,
+                  "TTL": 86400,
+                  "data": "ac1.nstld.com. info.verisign-grs.com. 1793015475 1800 900 604800 86400"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "unknown",
+          "whois_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "click",
+      "rdap": "https://rdap.registry.click/rdap/domain/AUDIT_LABEL.click",
+      "whois": "whois.registry.click",
+      "dpml": "",
+      "iana": [
+        "https://rdap.registry.click/rdap/"
+      ],
+      "samples": [
+        {
+          "domain": "nic.click",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.registry.click/rdap/domain/nic.click",
+            "http": 200,
+            "final_url": "https://rdap.registry.click/rdap/domain/nic.click",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "nic.click",
+              "unicodeName": "nic.click",
+              "status": [
+                "server transfer prohibited",
+                "server update prohibited",
+                "server delete prohibited",
+                "auto renew period"
+              ],
+              "events": [
+                {
+                  "eventAction": "registration",
+                  "eventActor": "dogbeach",
+                  "eventDate": "2013-09-16T14:21:26.648Z"
+                },
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2027-09-16T14:21:26.648Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2026-09-16T14:21:52.209Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T11:49:16.956Z"
+                }
+              ]
+            }
+          },
+          "whois": {
+            "server": "whois.registry.click",
+            "body": "Domain Name: nic.click\nRegistry Domain ID: DO_efcf6bb04e57603b52f5b6e0e04d57d8-ISC\nUpdated Date: 2026-09-16T14:21:52.209Z\nCreation Date: 2013-09-16T14:21:26.648Z\nRegistry Expiry Date: 2027-09-16T14:21:26.648Z\nDomain Status: serverTransferProhibited https://icann.org/epp#serverTransferProhibited\nDomain Status: serverUpdateProhibited https://icann.org/epp#serverUpdateProhibited\nDomain Status: serverDeleteProhibited https://icann.org/epp#serverDeleteProhibited\nDomain Status: autoRenewPeriod https://icann.org/epp#autoRenewPeriod",
+            "raw_bytes": 2555,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=nic.click&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=nic.click&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "nic.click",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "ns03.trs-dns.com."
+                },
+                {
+                  "name": "nic.click",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "ns03.trs-dns.net."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "whois_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.click",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.registry.click/rdap/domain/dott-audit-1793015340682304000.click",
+            "http": 404,
+            "final_url": "https://rdap.registry.click/rdap/domain/dott-audit-1793015340682304000.click",
+            "body": {
+              "errorCode": 404,
+              "title": "Not Found",
+              "description": [
+                "Domain dott-audit-1793015340682304000.click is available for registration",
+                "Please visit https://rdap.registry.click/registrars/ for a list of accredited registrars"
+              ]
+            }
+          },
+          "whois": {
+            "server": "whois.registry.click",
+            "body": ">>> Domain dott-audit-1793015340682304000.click is available for registration",
+            "raw_bytes": 1774,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.click&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.click&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "click",
+                  "type": 6,
+                  "TTL": 300,
+                  "data": "ns.trs-dns.com. trs-ops.tucows.com. 1793015436 1800 900 604800 300"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "whois_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "co",
+      "rdap": "",
+      "whois": "whois.registry.co",
+      "dpml": "",
+      "iana": [],
+      "samples": [
+        {
+          "domain": "nic.co",
+          "kind": "registry_reference",
+          "whois": {
+            "server": "whois.registry.co",
+            "body": "Domain Name: NIC.CO\nRegistry Domain ID: D30230624-CNIC\nUpdated Date: 2026-09-28T00:01:30.0Z\nCreation Date: 2025-10-04T06:47:10.0Z\nRegistry Expiry Date: 2027-10-04T23:59:59.0Z\nDomain Status: serverRenewProhibited https://icann.org/epp#serverRenewProhibited\nDomain Status: serverUpdateProhibited https://icann.org/epp#serverUpdateProhibited\nDomain Status: serverDeleteProhibited https://icann.org/epp#serverDeleteProhibited\nDomain Status: serverTransferProhibited https://icann.org/epp#serverTransferProhibited",
+            "raw_bytes": 2774,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=nic.co&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=nic.co&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "nic.co",
+                  "type": 2,
+                  "TTL": 3600,
+                  "data": "nameserver04.mi.com.co."
+                },
+                {
+                  "name": "nic.co",
+                  "type": 2,
+                  "TTL": 3600,
+                  "data": "nameserver03.mi.com.co."
+                },
+                {
+                  "name": "nic.co",
+                  "type": 2,
+                  "TTL": 3600,
+                  "data": "nameserver02.mi.com.co."
+                },
+                {
+                  "name": "nic.co",
+                  "type": 2,
+                  "TTL": 3600,
+                  "data": "nameserver01.mi.com.co."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "whois_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.co",
+          "kind": "unregistered_probe",
+          "whois": {
+            "server": "whois.registry.co",
+            "body": "The queried object does not exist: DOMAIN NOT FOUND",
+            "raw_bytes": 118,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.co&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.co&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "co",
+                  "type": 6,
+                  "TTL": 900,
+                  "data": "ns0.centralnic.net. hostmaster.centralnic.net. 1759789660 900 1800 6048000 3600"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "whois_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "com",
+      "rdap": "https://rdap.verisign.com/com/v1/domain/AUDIT_LABEL.com",
+      "whois": "whois.verisign-grs.com",
+      "dpml": "",
+      "iana": [
+        "https://rdap.verisign.com/com/v1/"
+      ],
+      "samples": [
+        {
+          "domain": "example.com",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.verisign.com/com/v1/domain/example.com",
+            "http": 200,
+            "final_url": "https://rdap.verisign.com/com/v1/domain/example.com",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "EXAMPLE.COM",
+              "status": [
+                "client delete prohibited",
+                "client transfer prohibited",
+                "client update prohibited"
+              ],
+              "events": [
+                {
+                  "eventAction": "registration",
+                  "eventDate": "1995-08-14T04:00:00Z"
+                },
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2027-08-13T04:00:00Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2026-08-14T08:01:43Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T11:48:42Z"
+                }
+              ]
+            }
+          },
+          "whois": {
+            "server": "whois.verisign-grs.com",
+            "body": "   Domain Name: EXAMPLE.COM\n   Registry Domain ID: 2336799_DOMAIN_COM-VRSN\n   Updated Date: 2026-08-14T08:01:43Z\n   Creation Date: 1995-08-14T04:00:00Z\n   Registry Expiry Date: 2027-08-13T04:00:00Z\n   Domain Status: clientDeleteProhibited https://icann.org/epp#clientDeleteProhibited\n   Domain Status: clientTransferProhibited https://icann.org/epp#clientTransferProhibited\n   Domain Status: clientUpdateProhibited https://icann.org/epp#clientUpdateProhibited",
+            "raw_bytes": 3325,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=example.com&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=example.com&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "example.com",
+                  "type": 2,
+                  "TTL": 81481,
+                  "data": "hera.ns.cloudflare.com."
+                },
+                {
+                  "name": "example.com",
+                  "type": 2,
+                  "TTL": 81481,
+                  "data": "elliott.ns.cloudflare.com."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "whois_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.com",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.verisign.com/com/v1/domain/dott-audit-1793015340682304000.com",
+            "http": 404,
+            "final_url": "https://rdap.verisign.com/com/v1/domain/dott-audit-1793015340682304000.com",
+            "invalid_json": true
+          },
+          "whois": {
+            "server": "whois.verisign-grs.com",
+            "body": "No match for \"DOTT-AUDIT-1793015340682304000.COM\".",
+            "raw_bytes": 2295,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.com&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.com&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "com",
+                  "type": 6,
+                  "TTL": 900,
+                  "data": "a.gtld-servers.net. nstld.verisign-grs.com. 1793015491 1800 900 604800 900"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "unknown",
+          "whois_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "computer",
+      "rdap": "https://rdap.identitydigital.services/rdap/domain/AUDIT_LABEL.computer",
+      "whois": "",
+      "dpml": "https://rdap.identitydigital.services/rdap/domain/AUDIT_LABEL.dpml.zone",
+      "iana": [
+        "https://rdap.identitydigital.services/rdap/"
+      ],
+      "samples": [
+        {
+          "domain": "nic.computer",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.identitydigital.services/rdap/domain/nic.computer",
+            "http": 200,
+            "final_url": "https://rdap.identitydigital.services/rdap/domain/nic.computer",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "nic.computer",
+              "unicodeName": "nic.computer",
+              "status": [
+                "server delete prohibited",
+                "server transfer prohibited",
+                "server update prohibited"
+              ],
+              "events": [
+                {
+                  "eventAction": "transfer",
+                  "eventDate": "2014-04-09T22:19:22.417Z"
+                },
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2026-10-28T23:15:32.823Z"
+                },
+                {
+                  "eventAction": "registration",
+                  "eventDate": "2013-10-28T23:15:32.823Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2026-08-12T06:06:14.995Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T11:49:12.561Z"
+                }
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=nic.computer&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=nic.computer&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "nic.computer",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "v0n2.nic.computer."
+                },
+                {
+                  "name": "nic.computer",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "v2n0.nic.computer."
+                },
+                {
+                  "name": "nic.computer",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "v0n0.nic.computer."
+                },
+                {
+                  "name": "nic.computer",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "v2n1.nic.computer."
+                },
+                {
+                  "name": "nic.computer",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "v0n1.nic.computer."
+                },
+                {
+                  "name": "nic.computer",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "v0n3.nic.computer."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.computer",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.identitydigital.services/rdap/domain/dott-audit-1793015340682304000.computer",
+            "http": 404,
+            "final_url": "https://rdap.identitydigital.services/rdap/domain/dott-audit-1793015340682304000.computer",
+            "body": {
+              "errorCode": 404,
+              "title": "Object not found",
+              "description": [
+                "Object not found"
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.computer&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.computer&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "computer",
+                  "type": 6,
+                  "TTL": 3600,
+                  "data": "v0n0.nic.computer. hostmaster.donuts.email. 1793014951 7200 900 1209600 3600"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "cv",
+      "rdap": "https://rdap.nic.cv/domain/AUDIT_LABEL.cv",
+      "whois": "",
+      "dpml": "",
+      "iana": [
+        "https://rdap.nic.cv/"
+      ],
+      "samples": [
+        {
+          "domain": "nic.cv",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.nic.cv/domain/nic.cv",
+            "http": 200,
+            "final_url": "https://rdap.nic.cv/domain/nic.cv",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "nic.cv",
+              "unicodeName": "nic.cv",
+              "status": [
+                "server transfer prohibited",
+                "server update prohibited",
+                "server delete prohibited",
+                "DS automation disabled",
+                "NS automation disabled"
+              ],
+              "events": [
+                {
+                  "eventAction": "registration",
+                  "eventDate": "2024-06-13T20:18:03Z"
+                },
+                {
+                  "eventAction": "reregistration",
+                  "eventActor": "ola.cv",
+                  "eventDate": "2024-07-19T10:58:40Z"
+                },
+                {
+                  "eventAction": "transfer",
+                  "eventActor": "TLD Manager Reserved",
+                  "eventDate": "2025-08-30T03:32:55Z"
+                },
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2099-08-31T00:00:00Z"
+                },
+                {
+                  "eventAction": "registrar expiration",
+                  "eventDate": "2099-08-31T00:00:00Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2026-03-02T09:37:40Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T11:46:43Z"
+                }
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=nic.cv&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=nic.cv&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "nic.cv",
+                  "type": 2,
+                  "TTL": 3600,
+                  "data": "nsu.dnsnode.net."
+                },
+                {
+                  "name": "nic.cv",
+                  "type": 2,
+                  "TTL": 3600,
+                  "data": "europe1.dnsnode.net."
+                },
+                {
+                  "name": "nic.cv",
+                  "type": 2,
+                  "TTL": 3600,
+                  "data": "anyc.dnsnode.net."
+                },
+                {
+                  "name": "nic.cv",
+                  "type": 2,
+                  "TTL": 3600,
+                  "data": "ns1.nic.cv."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.cv",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.nic.cv/domain/dott-audit-1793015340682304000.cv",
+            "http": 404,
+            "final_url": "https://rdap.nic.cv/domain/dott-audit-1793015340682304000.cv",
+            "body": {
+              "errorCode": 404,
+              "title": "No results for query dott-audit-1793015340682304000.cv"
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.cv&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.cv&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "cv",
+                  "type": 6,
+                  "TTL": 300,
+                  "data": "ns.dns.cv. dnsop.dns.cv. 2026102617 86400 7200 2592000 300"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "dev",
+      "rdap": "https://pubapi.registry.google/rdap/domain/AUDIT_LABEL.dev",
+      "whois": "",
+      "dpml": "",
+      "iana": [
+        "https://pubapi.registry.google/rdap/"
+      ],
+      "samples": [
+        {
+          "domain": "nic.dev",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://pubapi.registry.google/rdap/domain/nic.dev",
+            "http": 200,
+            "final_url": "https://pubapi.registry.google/rdap/domain/nic.dev",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "nic.dev",
+              "status": [
+                "server delete prohibited",
+                "server transfer prohibited",
+                "server update prohibited"
+              ],
+              "events": [
+                {
+                  "eventAction": "registration",
+                  "eventActor": "CharlestonRoad",
+                  "eventDate": "2015-01-05T17:44:36.784Z"
+                },
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2027-01-05T17:44:36.784Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T11:49:03.765Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2026-02-19T17:44:36.784Z"
+                }
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=nic.dev&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=nic.dev&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "nic.dev",
+                  "type": 2,
+                  "TTL": 345600,
+                  "data": "ns2.google.com."
+                },
+                {
+                  "name": "nic.dev",
+                  "type": 2,
+                  "TTL": 345600,
+                  "data": "ns3.google.com."
+                },
+                {
+                  "name": "nic.dev",
+                  "type": 2,
+                  "TTL": 345600,
+                  "data": "ns1.google.com."
+                },
+                {
+                  "name": "nic.dev",
+                  "type": 2,
+                  "TTL": 345600,
+                  "data": "ns4.google.com."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.dev",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://pubapi.registry.google/rdap/domain/dott-audit-1793015340682304000.dev",
+            "http": 404,
+            "final_url": "https://pubapi.registry.google/rdap/domain/dott-audit-1793015340682304000.dev",
+            "body": {
+              "errorCode": 404,
+              "title": "Not Found",
+              "description": [
+                "dott-audit-1793015340682304000.dev not found"
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.dev&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.dev&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "dev",
+                  "type": 6,
+                  "TTL": 300,
+                  "data": "ns-tld1.charlestonroadregistry.com. cloud-dns-hostmaster.google.com. 1 21600 3600 259200 300"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "fm",
+      "rdap": "https://rdap.centralnic.com/fm/domain/AUDIT_LABEL.fm",
+      "whois": "whois.nic.fm",
+      "dpml": "",
+      "iana": [
+        "https://rdap.centralnic.com/fm/"
+      ],
+      "samples": [
+        {
+          "domain": "nic.fm",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.centralnic.com/fm/domain/nic.fm",
+            "http": 200,
+            "final_url": "https://rdap.centralnic.com/fm/domain/nic.fm",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "nic.fm",
+              "status": [
+                "server transfer prohibited",
+                "client transfer prohibited",
+                "client delete prohibited"
+              ],
+              "events": [
+                {
+                  "eventAction": "registration",
+                  "eventDate": "2004-08-22T23:59:59.0Z"
+                },
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2099-08-21T23:59:59.0Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T11:49:13.0Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2023-08-31T16:50:32.0Z"
+                }
+              ]
+            }
+          },
+          "whois": {
+            "server": "whois.nic.fm",
+            "body": "Domain Name: NIC.FM\nRegistry Domain ID: D34891389-CNIC\nUpdated Date: 2023-08-31T16:50:32.0Z\nCreation Date: 2004-08-22T23:59:59.0Z\nRegistry Expiry Date: 2099-08-21T23:59:59.0Z\nDomain Status: serverTransferProhibited https://icann.org/epp#serverTransferProhibited\nDomain Status: clientTransferProhibited https://icann.org/epp#clientTransferProhibited\nDomain Status: clientDeleteProhibited https://icann.org/epp#clientDeleteProhibited",
+            "raw_bytes": 2042,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=nic.fm&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=nic.fm&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "nic.fm",
+                  "type": 2,
+                  "TTL": 3600,
+                  "data": "a.nic.fm."
+                },
+                {
+                  "name": "nic.fm",
+                  "type": 2,
+                  "TTL": 3600,
+                  "data": "b.nic.fm."
+                },
+                {
+                  "name": "nic.fm",
+                  "type": 2,
+                  "TTL": 3600,
+                  "data": "c.nic.fm."
+                },
+                {
+                  "name": "nic.fm",
+                  "type": 2,
+                  "TTL": 3600,
+                  "data": "d.nic.fm."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "whois_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.fm",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.centralnic.com/fm/domain/dott-audit-1793015340682304000.fm",
+            "http": 404,
+            "final_url": "https://rdap.centralnic.com/fm/domain/dott-audit-1793015340682304000.fm",
+            "body": {
+              "objectClassName": "error",
+              "errorCode": 404,
+              "title": "Object not found",
+              "description": [
+                "Object not found"
+              ]
+            }
+          },
+          "whois": {
+            "server": "whois.nic.fm",
+            "body": "The queried object does not exist: DOMAIN NOT FOUND",
+            "raw_bytes": 118,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.fm&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.fm&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "fm",
+                  "type": 6,
+                  "TTL": 3600,
+                  "data": "ns0.centralnic.net. itmanager.fsmtc.fm. 324565 900 300 604800 3600"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "whois_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "fr",
+      "rdap": "https://rdap.nic.fr/domain/AUDIT_LABEL.fr",
+      "whois": "",
+      "dpml": "",
+      "iana": [
+        "https://rdap.nic.fr/"
+      ],
+      "samples": [
+        {
+          "domain": "nic.fr",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.nic.fr/domain/nic.fr",
+            "http": 200,
+            "final_url": "https://rdap.nic.fr/domain/nic.fr",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "nic.fr",
+              "status": [
+                "server transfer prohibited",
+                "server delete prohibited"
+              ],
+              "events": [
+                {
+                  "eventAction": "registration",
+                  "eventDate": "1995-01-01T00:00:00Z"
+                },
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2029-12-31T23:00:00Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2026-06-05T07:20:46.286415Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T12:50:52.299560643Z"
+                }
+              ],
+              "nameservers": [
+                {
+                  "ldhName": "ns1.ext.nic.fr"
+                },
+                {
+                  "ldhName": "ns4.nic.fr"
+                },
+                {
+                  "ldhName": "ns6.ext.nic.fr"
+                },
+                {
+                  "ldhName": "ns7.ext.nic.fr"
+                }
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=nic.fr&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=nic.fr&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "nic.fr",
+                  "type": 2,
+                  "TTL": 172800,
+                  "data": "ns1.ext.nic.fr."
+                },
+                {
+                  "name": "nic.fr",
+                  "type": 2,
+                  "TTL": 172800,
+                  "data": "ns4.nic.fr."
+                },
+                {
+                  "name": "nic.fr",
+                  "type": 2,
+                  "TTL": 172800,
+                  "data": "ns6.ext.nic.fr."
+                },
+                {
+                  "name": "nic.fr",
+                  "type": 2,
+                  "TTL": 172800,
+                  "data": "ns7.ext.nic.fr."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793019047997797000.fr",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.nic.fr/domain/dott-audit-1793019047997797000.fr",
+            "http": 404,
+            "final_url": "https://rdap.nic.fr/domain/dott-audit-1793019047997797000.fr",
+            "body": {
+              "errorCode": 404,
+              "title": "NOT_FOUND_DOMAIN_NAME_WITH_NAME"
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793019047997797000.fr&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793019047997797000.fr&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "fr",
+                  "type": 6,
+                  "TTL": 600,
+                  "data": "a.nic.fr. dnsmaster.afnic.fr. 2247057542 3600 1800 1209600 600"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "fun",
+      "rdap": "https://rdap.radix.host/rdap/domain/AUDIT_LABEL.fun",
+      "whois": "whois.nic.fun",
+      "dpml": "",
+      "iana": [
+        "https://rdap.radix.host/rdap/"
+      ],
+      "samples": [
+        {
+          "domain": "nic.fun",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.radix.host/rdap/domain/nic.fun",
+            "http": 200,
+            "final_url": "https://rdap.radix.host/rdap/domain/nic.fun",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "nic.fun",
+              "unicodeName": "nic.fun",
+              "status": [
+                "server delete prohibited",
+                "server transfer prohibited",
+                "server update prohibited",
+                "server renew prohibited",
+                "auto renew period"
+              ],
+              "events": [
+                {
+                  "eventAction": "registration",
+                  "eventActor": "radix",
+                  "eventDate": "2016-10-25T11:48:07.000Z"
+                },
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2027-10-25T23:59:59.000Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2026-10-26T00:01:46.066Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T11:49:18.474Z"
+                }
+              ]
+            }
+          },
+          "whois": {
+            "server": "whois.nic.fun",
+            "body": "Domain Name: nic.fun\nRegistry Domain ID: D38032273-CNIC\nUpdated Date: 2026-10-26T00:01:46.066Z\nCreation Date: 2016-10-25T11:48:07.000Z\nRegistry Expiry Date: 2027-10-25T23:59:59.000Z\nDomain Status: serverDeleteProhibited https://icann.org/epp#serverDeleteProhibited\nDomain Status: serverTransferProhibited https://icann.org/epp#serverTransferProhibited\nDomain Status: serverUpdateProhibited https://icann.org/epp#serverUpdateProhibited\nDomain Status: serverRenewProhibited https://icann.org/epp#serverRenewProhibited\nDomain Status: autoRenewPeriod https://icann.org/epp#autoRenewPeriod",
+            "raw_bytes": 2626,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=nic.fun&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=nic.fun&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "nic.fun",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "ns03.trs-dns.com."
+                },
+                {
+                  "name": "nic.fun",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "ns03.trs-dns.net."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "whois_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.fun",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.radix.host/rdap/domain/dott-audit-1793015340682304000.fun",
+            "http": 404,
+            "final_url": "https://rdap.radix.host/rdap/domain/dott-audit-1793015340682304000.fun",
+            "body": {
+              "errorCode": 404,
+              "title": "Not Found",
+              "description": [
+                "Domain dott-audit-1793015340682304000.fun is available for registration",
+                "Please visit https://rdap.radix.host/registrars/ for a list of accredited registrars"
+              ]
+            }
+          },
+          "whois": {
+            "server": "whois.nic.fun",
+            "body": ">>> Domain dott-audit-1793015340682304000.fun is available for registration",
+            "raw_bytes": 1768,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.fun&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.fun&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "fun",
+                  "type": 6,
+                  "TTL": 300,
+                  "data": "ns.trs-dns.com. trs-ops.tucows.com. 1793015314 1800 900 604800 300"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "whois_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "fyi",
+      "rdap": "https://rdap.identitydigital.services/rdap/domain/AUDIT_LABEL.fyi",
+      "whois": "",
+      "dpml": "https://rdap.identitydigital.services/rdap/domain/AUDIT_LABEL.dpml.zone",
+      "iana": [
+        "https://rdap.identitydigital.services/rdap/"
+      ],
+      "samples": [
+        {
+          "domain": "nic.fyi",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.identitydigital.services/rdap/domain/nic.fyi",
+            "http": 200,
+            "final_url": "https://rdap.identitydigital.services/rdap/domain/nic.fyi",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "nic.fyi",
+              "unicodeName": "nic.fyi",
+              "status": [
+                "server delete prohibited",
+                "server transfer prohibited",
+                "server update prohibited"
+              ],
+              "events": [
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2027-03-05T18:40:49.257Z"
+                },
+                {
+                  "eventAction": "registration",
+                  "eventDate": "2015-03-05T18:40:49.257Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2026-08-12T01:58:26.294Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T11:49:13.557Z"
+                }
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=nic.fyi&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=nic.fyi&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "nic.fyi",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "v0n0.nic.fyi."
+                },
+                {
+                  "name": "nic.fyi",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "v0n1.nic.fyi."
+                },
+                {
+                  "name": "nic.fyi",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "v0n2.nic.fyi."
+                },
+                {
+                  "name": "nic.fyi",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "v0n3.nic.fyi."
+                },
+                {
+                  "name": "nic.fyi",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "v2n0.nic.fyi."
+                },
+                {
+                  "name": "nic.fyi",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "v2n1.nic.fyi."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.fyi",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.identitydigital.services/rdap/domain/dott-audit-1793015340682304000.fyi",
+            "http": 404,
+            "final_url": "https://rdap.identitydigital.services/rdap/domain/dott-audit-1793015340682304000.fyi",
+            "body": {
+              "errorCode": 404,
+              "title": "Object not found",
+              "description": [
+                "Object not found"
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.fyi&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.fyi&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "fyi",
+                  "type": 6,
+                  "TTL": 3600,
+                  "data": "v0n0.nic.fyi. hostmaster.donuts.email. 1793014780 7200 900 1209600 3600"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "gg",
+      "rdap": "",
+      "whois": "whois.gg",
+      "dpml": "",
+      "iana": [],
+      "samples": [
+        {
+          "domain": "nic.gg",
+          "kind": "registry_reference",
+          "whois": {
+            "server": "whois.gg",
+            "body": "Domain:\n     nic.gg\nDomain Status:\n     Active\n     Registered on 24th April 1997 at 00:00:00.000\n     Registered until cancelled",
+            "raw_bytes": 1271,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=nic.gg&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=nic.gg&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "nic.gg",
+                  "type": 2,
+                  "TTL": 3600,
+                  "data": "ns2.livedns.co.uk."
+                },
+                {
+                  "name": "nic.gg",
+                  "type": 2,
+                  "TTL": 3600,
+                  "data": "ns1.livedns.co.uk."
+                },
+                {
+                  "name": "nic.gg",
+                  "type": 2,
+                  "TTL": 3600,
+                  "data": "ns3.livedns.co.uk."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "whois_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.gg",
+          "kind": "unregistered_probe",
+          "whois": {
+            "server": "whois.gg",
+            "body": "NOT FOUND",
+            "raw_bytes": 11,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.gg&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.gg&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "gg",
+                  "type": 6,
+                  "TTL": 86400,
+                  "data": "c.ci-servers.org. dnsmaster.channelisles.net. 2026106431 21600 3600 2592000 86400"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "whois_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "gy",
+      "rdap": "https://rdap.registry.gy/domain/AUDIT_LABEL.gy",
+      "whois": "",
+      "dpml": "",
+      "iana": [
+        "https://rdap.registry.gy/"
+      ],
+      "samples": [
+        {
+          "domain": "registry.gy",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.registry.gy/domain/registry.gy",
+            "http": 200,
+            "final_url": "https://rdap.registry.gy/domain/registry.gy",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "registry.gy",
+              "unicodeName": "registry.gy",
+              "status": [
+                "active",
+                "DS automation disabled",
+                "NS automation disabled"
+              ],
+              "events": [
+                {
+                  "eventAction": "registration",
+                  "eventDate": "2008-05-22T13:31:10Z"
+                },
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2027-12-31T00:00:00Z"
+                },
+                {
+                  "eventAction": "registrar expiration",
+                  "eventDate": "2027-12-31T00:00:00Z"
+                },
+                {
+                  "eventAction": "transfer",
+                  "eventDate": "2011-07-14T18:04:53Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2025-12-11T14:47:44Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T12:38:56Z"
+                }
+              ],
+              "nameservers": [
+                {
+                  "ldhName": "ns1.dns-parking.com"
+                },
+                {
+                  "ldhName": "ns2.dns-parking.com"
+                }
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=registry.gy&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=registry.gy&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "registry.gy",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "ns2.dns-parking.com."
+                },
+                {
+                  "name": "registry.gy",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "ns1.dns-parking.com."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793019047997797000.gy",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.registry.gy/domain/dott-audit-1793019047997797000.gy",
+            "http": 404,
+            "final_url": "https://rdap.registry.gy/domain/dott-audit-1793019047997797000.gy",
+            "body": {
+              "errorCode": 404,
+              "title": "No results for query dott-audit-1793019047997797000.gy"
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793019047997797000.gy&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793019047997797000.gy&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "gy",
+                  "type": 6,
+                  "TTL": 38400,
+                  "data": "soa.registry.gy. admin.registry.gy. 2026102610 1800 3600 604800 38400"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "id",
+      "rdap": "https://rdap.pandi.id/rdap/domain/AUDIT_LABEL.id",
+      "whois": "",
+      "dpml": "",
+      "iana": [
+        "https://rdap.pandi.id/rdap/"
+      ],
+      "samples": [
+        {
+          "domain": "pandi.id",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.pandi.id/rdap/domain/pandi.id",
+            "http": 200,
+            "final_url": "https://rdap.pandi.id/rdap/domain/pandi.id",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "PANDI.ID",
+              "status": [
+                "server delete prohibited",
+                "server transfer prohibited"
+              ],
+              "events": [
+                {
+                  "eventAction": "registration",
+                  "eventDate": "2013-04-14T07:27:32Z"
+                },
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2027-04-14T23:59:59Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2026-08-25T07:58:47Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T11:50:33Z"
+                }
+              ],
+              "nameservers": [
+                {
+                  "ldhName": "bagendit.pandi.id"
+                },
+                {
+                  "ldhName": "sentani.pandi.id"
+                }
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=pandi.id&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=pandi.id&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "pandi.id",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "sentani.pandi.id."
+                },
+                {
+                  "name": "pandi.id",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "bagendit.pandi.id."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793019047997797000.id",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.pandi.id/rdap/domain/dott-audit-1793019047997797000.id",
+            "http": 404,
+            "final_url": "https://rdap.pandi.id/rdap/domain/dott-audit-1793019047997797000.id",
+            "body": {
+              "errorCode": 404,
+              "title": "Not Found",
+              "description": [
+                "Domain Not Found",
+                "dott-audit-1793019047997797000.id"
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793019047997797000.id&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793019047997797000.id&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "id",
+                  "type": 6,
+                  "TTL": 86400,
+                  "data": "b.dns.id. hostmaster.pandi.id. 2026467720 28800 7200 604800 172800"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "in",
+      "rdap": "https://rdap.nixiregistry.in/rdap/domain/AUDIT_LABEL.in",
+      "whois": "",
+      "dpml": "",
+      "iana": [
+        "https://rdap.nixiregistry.in/rdap/"
+      ],
+      "samples": [
+        {
+          "domain": "registry.in",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.nixiregistry.in/rdap/domain/registry.in",
+            "http": 200,
+            "final_url": "https://rdap.nixiregistry.in/rdap/domain/registry.in",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "registry.in",
+              "unicodeName": "registry.in",
+              "status": [
+                "server delete prohibited",
+                "server update prohibited",
+                "server transfer prohibited",
+                "client delete prohibited",
+                "client transfer prohibited",
+                "client renew prohibited"
+              ],
+              "events": [
+                {
+                  "eventAction": "registration",
+                  "eventActor": "nixi",
+                  "eventDate": "2025-05-28T12:24:03.742Z"
+                },
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2035-05-28T12:24:03.742Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2025-05-28T14:09:53.119Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T12:50:52.101Z"
+                }
+              ],
+              "nameservers": [
+                {
+                  "ldhName": "ns02.trs-dns.com"
+                },
+                {
+                  "ldhName": "ns02.trs-dns.net"
+                }
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=registry.in&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=registry.in&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "registry.in",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "ns02.trs-dns.com."
+                },
+                {
+                  "name": "registry.in",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "ns02.trs-dns.net."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793019047997797000.in",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.nixiregistry.in/rdap/domain/dott-audit-1793019047997797000.in",
+            "http": 404,
+            "final_url": "https://rdap.nixiregistry.in/rdap/domain/dott-audit-1793019047997797000.in",
+            "body": {
+              "errorCode": 404,
+              "title": "Not Found",
+              "description": [
+                "Domain dott-audit-1793019047997797000.in is available for registration",
+                "Please visit https://rdap.nixiregistry.in/registrars/ for a list of accredited registrars"
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793019047997797000.in&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793019047997797000.in&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "in",
+                  "type": 6,
+                  "TTL": 300,
+                  "data": "ns.trs-dns.com. trs-ops.tucows.com. 1793018754 1800 900 604800 300"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "io",
+      "rdap": "https://rdap.identitydigital.services/rdap/domain/AUDIT_LABEL.io",
+      "whois": "whois.nic.io",
+      "dpml": "",
+      "iana": [],
+      "samples": [
+        {
+          "domain": "nic.io",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.identitydigital.services/rdap/domain/nic.io",
+            "http": 200,
+            "final_url": "https://rdap.identitydigital.services/rdap/domain/nic.io",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "nic.io",
+              "unicodeName": "nic.io",
+              "status": [
+                "server delete prohibited",
+                "server transfer prohibited",
+                "server update prohibited"
+              ],
+              "events": [
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2027-05-01T00:00:02Z"
+                },
+                {
+                  "eventAction": "registration",
+                  "eventDate": "2003-09-15T11:13:53Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2026-08-11T21:49:58.816Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T11:49:00.958Z"
+                }
+              ]
+            }
+          },
+          "whois": {
+            "server": "whois.nic.io",
+            "body": "Domain Name: nic.io\nRegistry Domain ID: REDACTED\nUpdated Date: 2026-08-11T21:49:58Z\nCreation Date: 2003-09-15T11:13:53Z\nRegistry Expiry Date: 2027-05-01T00:00:02Z\nDomain Status: serverDeleteProhibited https://icann.org/epp#serverDeleteProhibited\nDomain Status: serverTransferProhibited https://icann.org/epp#serverTransferProhibited\nDomain Status: serverUpdateProhibited https://icann.org/epp#serverUpdateProhibited",
+            "raw_bytes": 4926,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=nic.io&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=nic.io&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "nic.io",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "a0.nic.io."
+                },
+                {
+                  "name": "nic.io",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "c0.nic.io."
+                },
+                {
+                  "name": "nic.io",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "b0.nic.io."
+                },
+                {
+                  "name": "nic.io",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "a2.nic.io."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "whois_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.io",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.identitydigital.services/rdap/domain/dott-audit-1793015340682304000.io",
+            "http": 404,
+            "final_url": "https://rdap.identitydigital.services/rdap/domain/dott-audit-1793015340682304000.io",
+            "body": {
+              "errorCode": 404,
+              "title": "Object not found",
+              "description": [
+                "Object not found"
+              ]
+            }
+          },
+          "whois": {
+            "server": "whois.nic.io",
+            "body": "Domain not found.",
+            "raw_bytes": 2759,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.io&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.io&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "io",
+                  "type": 6,
+                  "TTL": 3600,
+                  "data": "a0.nic.io. hostmaster.donuts.email. 1793014798 7200 900 1209600 3600"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "whois_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "is",
+      "rdap": "https://rdap.isnic.is/rdap/domain/AUDIT_LABEL.is",
+      "whois": "",
+      "dpml": "",
+      "iana": [
+        "https://rdap.isnic.is/rdap/"
+      ],
+      "samples": [
+        {
+          "domain": "isnic.is",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.isnic.is/rdap/domain/isnic.is",
+            "http": 200,
+            "final_url": "https://rdap.isnic.is/rdap/domain/isnic.is",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "isnic.is",
+              "unicodeName": "isnic.is",
+              "status": [
+                "active"
+              ],
+              "events": [
+                {
+                  "eventDate": "2000-09-05T00:00:01+00:00",
+                  "eventAction": "registration"
+                },
+                {
+                  "eventDate": "2026-04-29T16:15:00+00:00",
+                  "eventAction": "last changed"
+                },
+                {
+                  "eventDate": "2027-09-05T00:00:00+00:00",
+                  "eventAction": "soft expiration"
+                }
+              ],
+              "nameservers": [
+                {
+                  "ldhName": "ht-secondary01.isnic.is"
+                },
+                {
+                  "ldhName": "mh-secondary01.isnic.is"
+                },
+                {
+                  "ldhName": "sec1.rcode0.net"
+                },
+                {
+                  "ldhName": "nsp.dnsnode.net"
+                }
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=isnic.is&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=isnic.is&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "isnic.is",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "nsp.dnsnode.net."
+                },
+                {
+                  "name": "isnic.is",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "sec1.rcode0.net."
+                },
+                {
+                  "name": "isnic.is",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "ht-secondary01.isnic.is."
+                },
+                {
+                  "name": "isnic.is",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "mh-secondary01.isnic.is."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793019047997797000.is",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.isnic.is/rdap/domain/dott-audit-1793019047997797000.is",
+            "http": 404,
+            "final_url": "https://rdap.isnic.is/rdap/domain/dott-audit-1793019047997797000.is",
+            "body": {
+              "errorCode": 404,
+              "title": "not found",
+              "description": [
+                ""
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793019047997797000.is&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793019047997797000.is&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "is",
+                  "type": 6,
+                  "TTL": 1800,
+                  "data": "a.nic.is. hostmaster.isnic.is. 1793019002 7200 7200 2419200 1800"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "live",
+      "rdap": "https://rdap.identitydigital.services/rdap/domain/AUDIT_LABEL.live",
+      "whois": "",
+      "dpml": "https://rdap.identitydigital.services/rdap/domain/AUDIT_LABEL.dpml.zone",
+      "iana": [
+        "https://rdap.identitydigital.services/rdap/"
+      ],
+      "samples": [
+        {
+          "domain": "nic.live",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.identitydigital.services/rdap/domain/nic.live",
+            "http": 200,
+            "final_url": "https://rdap.identitydigital.services/rdap/domain/nic.live",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "nic.live",
+              "unicodeName": "nic.live",
+              "status": [
+                "server delete prohibited",
+                "server transfer prohibited",
+                "server update prohibited"
+              ],
+              "events": [
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2027-04-27T22:04:24.017Z"
+                },
+                {
+                  "eventAction": "registration",
+                  "eventDate": "2015-04-27T22:04:24.017Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2026-08-12T03:10:40.385Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T11:49:10.562Z"
+                }
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=nic.live&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=nic.live&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "nic.live",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "v0n2.nic.live."
+                },
+                {
+                  "name": "nic.live",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "v0n3.nic.live."
+                },
+                {
+                  "name": "nic.live",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "v0n0.nic.live."
+                },
+                {
+                  "name": "nic.live",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "v2n1.nic.live."
+                },
+                {
+                  "name": "nic.live",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "v2n0.nic.live."
+                },
+                {
+                  "name": "nic.live",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "v0n1.nic.live."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.live",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.identitydigital.services/rdap/domain/dott-audit-1793015340682304000.live",
+            "http": 404,
+            "final_url": "https://rdap.identitydigital.services/rdap/domain/dott-audit-1793015340682304000.live",
+            "body": {
+              "errorCode": 404,
+              "title": "Object not found",
+              "description": [
+                "Object not found"
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.live&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.live&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "live",
+                  "type": 6,
+                  "TTL": 3600,
+                  "data": "v0n0.nic.live. hostmaster.donuts.email. 1793014766 7200 900 1209600 3600"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "ly",
+      "rdap": "https://rdap.nic.ly/domain/AUDIT_LABEL.ly",
+      "whois": "",
+      "dpml": "",
+      "iana": [
+        "https://rdap.nic.ly/"
+      ],
+      "samples": [
+        {
+          "domain": "nic.ly",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.nic.ly/domain/nic.ly",
+            "http": 200,
+            "final_url": "https://rdap.nic.ly/domain/nic.ly",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "nic.ly",
+              "unicodeName": "nic.ly",
+              "status": [
+                "client transfer prohibited",
+                "client update prohibited",
+                "DS automation disabled",
+                "NS automation disabled"
+              ],
+              "events": [
+                {
+                  "eventAction": "registration",
+                  "eventDate": "2006-11-12T22:00:00Z"
+                },
+                {
+                  "eventAction": "reregistration",
+                  "eventActor": "LTT local (loc)",
+                  "eventDate": "2020-10-29T20:41:16Z"
+                },
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2035-11-12T22:00:00Z"
+                },
+                {
+                  "eventAction": "registrar expiration",
+                  "eventDate": "2035-11-12T22:00:00Z"
+                },
+                {
+                  "eventAction": "transfer",
+                  "eventDate": "2020-10-20T01:16:50Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2025-11-19T08:06:33Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T12:47:40Z"
+                }
+              ],
+              "nameservers": [
+                {
+                  "ldhName": "dns1.lttnet.net"
+                },
+                {
+                  "ldhName": "dns.lttnet.net"
+                }
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=nic.ly&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=nic.ly&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "nic.ly",
+                  "type": 2,
+                  "TTL": 21600,
+                  "data": "dns1.lttnet.net."
+                },
+                {
+                  "name": "nic.ly",
+                  "type": 2,
+                  "TTL": 21600,
+                  "data": "dns.lttnet.net."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793019047997797000.ly",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.nic.ly/domain/dott-audit-1793019047997797000.ly",
+            "http": 404,
+            "final_url": "https://rdap.nic.ly/domain/dott-audit-1793019047997797000.ly",
+            "body": {
+              "errorCode": 404,
+              "title": "No results for query dott-audit-1793019047997797000.ly"
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793019047997797000.ly&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793019047997797000.ly&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "ly",
+                  "type": 6,
+                  "TTL": 600,
+                  "data": "dns.lttnet.net. khaleds.lttnet.net. 2026102617 3600 900 604800 600"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "me",
+      "rdap": "https://rdap.identitydigital.services/rdap/domain/AUDIT_LABEL.me",
+      "whois": "whois.nic.me",
+      "dpml": "",
+      "iana": [],
+      "samples": [
+        {
+          "domain": "nic.me",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.identitydigital.services/rdap/domain/nic.me",
+            "http": 200,
+            "final_url": "https://rdap.identitydigital.services/rdap/domain/nic.me",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "nic.me",
+              "unicodeName": "nic.me",
+              "status": [
+                "server delete prohibited",
+                "server transfer prohibited",
+                "server update prohibited"
+              ],
+              "events": [
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2027-04-29T17:53:03.156Z"
+                },
+                {
+                  "eventAction": "registration",
+                  "eventDate": "2008-04-29T17:53:03.156Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2026-08-12T00:12:30.32Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T11:49:06.601Z"
+                }
+              ]
+            }
+          },
+          "whois": {
+            "server": "whois.nic.me",
+            "body": "Domain Name: nic.me\nRegistry Domain ID: REDACTED\nUpdated Date: 2026-08-12T00:12:30Z\nCreation Date: 2008-04-29T17:53:03Z\nRegistry Expiry Date: 2027-04-29T17:53:03Z\nDomain Status: serverDeleteProhibited https://icann.org/epp#serverDeleteProhibited\nDomain Status: serverTransferProhibited https://icann.org/epp#serverTransferProhibited\nDomain Status: serverUpdateProhibited https://icann.org/epp#serverUpdateProhibited",
+            "raw_bytes": 4946,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=nic.me&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=nic.me&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "nic.me",
+                  "type": 2,
+                  "TTL": 21600,
+                  "data": "a0.nic.me."
+                },
+                {
+                  "name": "nic.me",
+                  "type": 2,
+                  "TTL": 21600,
+                  "data": "a2.nic.me."
+                },
+                {
+                  "name": "nic.me",
+                  "type": 2,
+                  "TTL": 21600,
+                  "data": "b0.nic.me."
+                },
+                {
+                  "name": "nic.me",
+                  "type": 2,
+                  "TTL": 21600,
+                  "data": "b2.nic.me."
+                },
+                {
+                  "name": "nic.me",
+                  "type": 2,
+                  "TTL": 21600,
+                  "data": "c0.nic.me."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "whois_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.me",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.identitydigital.services/rdap/domain/dott-audit-1793015340682304000.me",
+            "http": 404,
+            "final_url": "https://rdap.identitydigital.services/rdap/domain/dott-audit-1793015340682304000.me",
+            "body": {
+              "errorCode": 404,
+              "title": "Object not found",
+              "description": [
+                "Object not found"
+              ]
+            }
+          },
+          "whois": {
+            "server": "whois.nic.me",
+            "body": "Domain not found.",
+            "raw_bytes": 2759,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.me&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.me&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "me",
+                  "type": 6,
+                  "TTL": 3600,
+                  "data": "a0.nic.me. hostmaster.donuts.email. 1793014858 7200 900 1209600 3600"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "whois_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "net",
+      "rdap": "https://rdap.verisign.com/net/v1/domain/AUDIT_LABEL.net",
+      "whois": "whois.verisign-grs.com",
+      "dpml": "",
+      "iana": [
+        "https://rdap.verisign.com/net/v1/"
+      ],
+      "samples": [
+        {
+          "domain": "example.net",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.verisign.com/net/v1/domain/example.net",
+            "http": 200,
+            "final_url": "https://rdap.verisign.com/net/v1/domain/example.net",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "EXAMPLE.NET",
+              "status": [
+                "client delete prohibited",
+                "client transfer prohibited",
+                "client update prohibited"
+              ],
+              "events": [
+                {
+                  "eventAction": "registration",
+                  "eventDate": "1995-08-31T04:00:00Z"
+                },
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2027-08-30T04:00:00Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2026-08-31T08:01:44Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T11:48:42Z"
+                }
+              ]
+            }
+          },
+          "whois": {
+            "server": "whois.verisign-grs.com",
+            "body": "   Domain Name: EXAMPLE.NET\n   Registry Domain ID: 2328120_DOMAIN_NET-VRSN\n   Updated Date: 2026-08-31T08:01:44Z\n   Creation Date: 1995-08-31T04:00:00Z\n   Registry Expiry Date: 2027-08-30T04:00:00Z\n   Domain Status: clientDeleteProhibited https://icann.org/epp#clientDeleteProhibited\n   Domain Status: clientTransferProhibited https://icann.org/epp#clientTransferProhibited\n   Domain Status: clientUpdateProhibited https://icann.org/epp#clientUpdateProhibited",
+            "raw_bytes": 3323,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=example.net&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=example.net&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "example.net",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "hugh.ns.cloudflare.com."
+                },
+                {
+                  "name": "example.net",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "betty.ns.cloudflare.com."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "whois_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.net",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.verisign.com/net/v1/domain/dott-audit-1793015340682304000.net",
+            "http": 404,
+            "final_url": "https://rdap.verisign.com/net/v1/domain/dott-audit-1793015340682304000.net",
+            "invalid_json": true
+          },
+          "whois": {
+            "server": "whois.verisign-grs.com",
+            "body": "No match for \"DOTT-AUDIT-1793015340682304000.NET\".",
+            "raw_bytes": 2295,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.net&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.net&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "net",
+                  "type": 6,
+                  "TTL": 900,
+                  "data": "a.gtld-servers.net. nstld.verisign-grs.com. 1793015491 1800 900 604800 900"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "unknown",
+          "whois_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "org",
+      "rdap": "https://rdap.publicinterestregistry.org/rdap/domain/AUDIT_LABEL.org",
+      "whois": "whois.pir.org",
+      "dpml": "",
+      "iana": [
+        "https://rdap.publicinterestregistry.org/rdap/"
+      ],
+      "samples": [
+        {
+          "domain": "example.org",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.publicinterestregistry.org/rdap/domain/example.org",
+            "http": 200,
+            "final_url": "https://rdap.publicinterestregistry.org/rdap/domain/example.org",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "example.org",
+              "unicodeName": "example.org",
+              "status": [
+                "server delete prohibited",
+                "server transfer prohibited",
+                "server update prohibited"
+              ],
+              "events": [
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2027-08-30T04:00:00Z"
+                },
+                {
+                  "eventAction": "registration",
+                  "eventDate": "1995-08-31T04:00:00Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2026-10-14T04:00:57.481Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T11:49:00.959Z"
+                }
+              ]
+            }
+          },
+          "whois": {
+            "server": "whois.pir.org",
+            "body": "Domain Name: example.org\nRegistry Domain ID: REDACTED\nUpdated Date: 2026-10-14T04:00:57Z\nCreation Date: 1995-08-31T04:00:00Z\nRegistry Expiry Date: 2027-08-30T04:00:00Z\nDomain Status: serverDeleteProhibited https://icann.org/epp#serverDeleteProhibited\nDomain Status: serverTransferProhibited https://icann.org/epp#serverTransferProhibited\nDomain Status: serverUpdateProhibited https://icann.org/epp#serverUpdateProhibited",
+            "raw_bytes": 2467,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=example.org&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=example.org&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "example.org",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "mitch.ns.cloudflare.com."
+                },
+                {
+                  "name": "example.org",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "katelyn.ns.cloudflare.com."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "whois_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.org",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.publicinterestregistry.org/rdap/domain/dott-audit-1793015340682304000.org",
+            "http": 404,
+            "final_url": "https://rdap.publicinterestregistry.org/rdap/domain/dott-audit-1793015340682304000.org",
+            "body": {
+              "errorCode": 404,
+              "title": "Object not found",
+              "description": [
+                "Object not found"
+              ]
+            }
+          },
+          "whois": {
+            "server": "whois.pir.org",
+            "body": "Domain not found.",
+            "raw_bytes": 1466,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.org&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.org&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "org",
+                  "type": 6,
+                  "TTL": 3600,
+                  "data": "a0.org.afilias-nst.info. hostmaster.donuts.email. 1793015146 7200 900 1209600 3600"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "whois_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "sh",
+      "rdap": "",
+      "whois": "whois.nic.sh",
+      "dpml": "",
+      "iana": [],
+      "samples": [
+        {
+          "domain": "nic.sh",
+          "kind": "registry_reference",
+          "whois": {
+            "server": "whois.nic.sh",
+            "body": "Domain Name: nic.sh\nRegistry Domain ID: REDACTED\nUpdated Date: 2026-08-11T21:49:58Z\nCreation Date: 2002-07-04T07:42:26Z\nRegistry Expiry Date: 2027-05-01T00:00:02Z\nDomain Status: serverDeleteProhibited https://icann.org/epp#serverDeleteProhibited\nDomain Status: serverTransferProhibited https://icann.org/epp#serverTransferProhibited\nDomain Status: serverUpdateProhibited https://icann.org/epp#serverUpdateProhibited",
+            "raw_bytes": 4926,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=nic.sh&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=nic.sh&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "nic.sh",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "a0.nic.sh."
+                },
+                {
+                  "name": "nic.sh",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "a2.nic.sh."
+                },
+                {
+                  "name": "nic.sh",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "b0.nic.sh."
+                },
+                {
+                  "name": "nic.sh",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "c0.nic.sh."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "whois_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.sh",
+          "kind": "unregistered_probe",
+          "whois": {
+            "server": "whois.nic.sh",
+            "body": "Domain not found.",
+            "raw_bytes": 2759,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.sh&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.sh&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "sh",
+                  "type": 6,
+                  "TTL": 3600,
+                  "data": "a0.nic.sh. hostmaster.donuts.email. 1793015053 7200 900 1209600 3600"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "whois_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "si",
+      "rdap": "https://rdap.register.si/domain/AUDIT_LABEL.si",
+      "whois": "whois.register.si",
+      "dpml": "",
+      "iana": [
+        "https://rdap.register.si/"
+      ],
+      "samples": [
+        {
+          "domain": "registry.si",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.register.si/domain/registry.si",
+            "http": 200,
+            "final_url": "https://rdap.register.si/domain/registry.si",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "registry.si",
+              "status": [
+                "server delete prohibited",
+                "server transfer prohibited",
+                "server update prohibited"
+              ],
+              "events": [
+                {
+                  "eventAction": "registration",
+                  "eventDate": "2008-10-28"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2026-09-28"
+                },
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2027-10-28"
+                }
+              ]
+            }
+          },
+          "whois": {
+            "server": "whois.register.si",
+            "body": "domain:\t\tregistry.si\nstatus:\t\tserver_delete_prohibited,server_transfer_prohibited,server_update_prohibited\ncreated:\t2008-10-28\nexpire:\t\t2027-10-28",
+            "raw_bytes": 2388,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=registry.si&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=registry.si&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "registry.si",
+                  "type": 2,
+                  "TTL": 600,
+                  "data": "rc0.register.si."
+                },
+                {
+                  "name": "registry.si",
+                  "type": 2,
+                  "TTL": 600,
+                  "data": "kanin.arnes.si."
+                },
+                {
+                  "name": "registry.si",
+                  "type": 2,
+                  "TTL": 600,
+                  "data": "nanos.arnes.si."
+                },
+                {
+                  "name": "registry.si",
+                  "type": 2,
+                  "TTL": 600,
+                  "data": "netnod.register.si."
+                },
+                {
+                  "name": "registry.si",
+                  "type": 2,
+                  "TTL": 600,
+                  "data": "d-zone1.register.si."
+                },
+                {
+                  "name": "registry.si",
+                  "type": 2,
+                  "TTL": 600,
+                  "data": "d-zone2.register.si."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "whois_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.si",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.register.si/domain/dott-audit-1793015340682304000.si",
+            "http": 404,
+            "final_url": "https://rdap.register.si/domain/dott-audit-1793015340682304000.si",
+            "body": {
+              "errorCode": 404,
+              "title": "Domain 'dott-audit-1793015340682304000.si' not found"
+            }
+          },
+          "whois": {
+            "server": "whois.register.si",
+            "body": "% No entries found for the selected source(s).",
+            "raw_bytes": 1494,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.si&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.si&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "si",
+                  "type": 6,
+                  "TTL": 3600,
+                  "data": "b.dns.si. dns.register.si. 1793012429 3600 1800 720000 3600"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "whois_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "so",
+      "rdap": "https://rdap.nic.so/domain/AUDIT_LABEL.so",
+      "whois": "whois.nic.so",
+      "dpml": "",
+      "iana": [],
+      "samples": [
+        {
+          "domain": "nic.so",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.nic.so/domain/nic.so",
+            "http": 200,
+            "final_url": "https://rdap.nic.so/domain/nic.so",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "nic.so",
+              "unicodeName": "nic.so",
+              "status": [
+                "client renew prohibited",
+                "server renew prohibited",
+                "client transfer prohibited",
+                "server transfer prohibited",
+                "client update prohibited",
+                "server update prohibited",
+                "client delete prohibited",
+                "server delete prohibited",
+                "DS automation disabled",
+                "NS automation disabled"
+              ],
+              "events": [
+                {
+                  "eventAction": "registration",
+                  "eventDate": "2010-10-31T00:00:00Z"
+                },
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2031-10-31T00:00:00Z"
+                },
+                {
+                  "eventAction": "registrar expiration",
+                  "eventDate": "2031-10-31T00:00:00Z"
+                },
+                {
+                  "eventAction": "transfer",
+                  "eventDate": "2024-07-14T07:04:38Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2024-07-14T07:04:38Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T11:34:45Z"
+                }
+              ]
+            }
+          },
+          "whois": {
+            "server": "whois.nic.so",
+            "body": "Domain Name: nic.so\nRegistry Domain ID: 31099-sonic\nUpdated Date: 2024-07-14T07:04:38Z\nCreation Date: 2010-10-31T00:00:00Z\nRegistry Expiry Date: 2031-10-31T00:00:00Z\nDomain Status: active https://icann.org/epp#active\nDomain Status: clientRenewProhibited https://icann.org/epp#clientRenewProhibited\nDomain Status: serverRenewProhibited https://icann.org/epp#serverRenewProhibited\nDomain Status: clientTransferProhibited https://icann.org/epp#clientTransferProhibited\nDomain Status: serverTransferProhibited https://icann.org/epp#serverTransferProhibited\nDomain Status: clientUpdateProhibited https://icann.org/epp#clientUpdateProhibited\nDomain Status: serverUpdateProhibited https://icann.org/epp#serverUpdateProhibited\nDomain Status: clientDeleteProhibited https://icann.org/epp#clientDeleteProhibited\nDomain Status: serverDeleteProhibited https://icann.org/epp#serverDeleteProhibited",
+            "raw_bytes": 2157,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=nic.so&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=nic.so&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "nic.so",
+                  "type": 2,
+                  "TTL": 3600,
+                  "data": "a.nic.so."
+                },
+                {
+                  "name": "nic.so",
+                  "type": 2,
+                  "TTL": 3600,
+                  "data": "b.nic.so."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "whois_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.so",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.nic.so/domain/dott-audit-1793015340682304000.so",
+            "http": 404,
+            "final_url": "https://rdap.nic.so/domain/dott-audit-1793015340682304000.so",
+            "body": {
+              "errorCode": 404,
+              "title": "No results for query dott-audit-1793015340682304000.so"
+            }
+          },
+          "whois": {
+            "server": "whois.nic.so",
+            "body": "Domain Name: dott-audit-1793015340682304000.so\nThe queried object does not exist: No Object Found",
+            "raw_bytes": 987,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.so&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.so&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "so",
+                  "type": 6,
+                  "TTL": 86400,
+                  "data": "d.nic.so. hostmaster.nic.so. 2026102611 21600 3600 604800 86400"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "whois_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "to",
+      "rdap": "https://rdap.tonicregistry.to/rdap/domain/AUDIT_LABEL.to",
+      "whois": "",
+      "dpml": "",
+      "iana": [
+        "https://rdap.tonicregistry.to/rdap/"
+      ],
+      "samples": [
+        {
+          "domain": "tonic.to",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.tonicregistry.to/rdap/domain/tonic.to",
+            "http": 200,
+            "final_url": "https://rdap.tonicregistry.to/rdap/domain/tonic.to",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "tonic.to",
+              "unicodeName": "tonic.to",
+              "status": [
+                "server update prohibited",
+                "server transfer prohibited",
+                "server delete prohibited"
+              ],
+              "events": [
+                {
+                  "eventAction": "registration",
+                  "eventActor": "tonic",
+                  "eventDate": "2025-07-30T14:07:33.169Z"
+                },
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2035-07-30T14:07:33.169Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2025-09-09T18:10:31.642Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T12:50:49.005Z"
+                }
+              ],
+              "nameservers": [
+                {
+                  "ldhName": "karina.ns.cloudflare.com"
+                },
+                {
+                  "ldhName": "sean.ns.cloudflare.com"
+                }
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=tonic.to&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=tonic.to&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "tonic.to",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "karina.ns.cloudflare.com."
+                },
+                {
+                  "name": "tonic.to",
+                  "type": 2,
+                  "TTL": 86400,
+                  "data": "sean.ns.cloudflare.com."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793019047997797000.to",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.tonicregistry.to/rdap/domain/dott-audit-1793019047997797000.to",
+            "http": 404,
+            "final_url": "https://rdap.tonicregistry.to/rdap/domain/dott-audit-1793019047997797000.to",
+            "body": {
+              "errorCode": 404,
+              "title": "Not Found",
+              "description": [
+                "Domain dott-audit-1793019047997797000.to is available for registration",
+                "Please visit https://rdap.tonicregistry.to/registrars/ for a list of accredited registrars"
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793019047997797000.to&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793019047997797000.to&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "to",
+                  "type": 6,
+                  "TTL": 300,
+                  "data": "ns.trs-dns.com. trs-ops.tucows.com. 1793019018 1800 900 604800 300"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "tv",
+      "rdap": "https://rdap.nic.tv/domain/AUDIT_LABEL.tv",
+      "whois": "",
+      "dpml": "",
+      "iana": [
+        "https://rdap.nic.tv/"
+      ],
+      "samples": [
+        {
+          "domain": "nic.tv",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.nic.tv/domain/nic.tv",
+            "http": 200,
+            "final_url": "https://rdap.nic.tv/domain/nic.tv",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "nic.tv",
+              "unicodeName": "nic.tv",
+              "status": [
+                "client renew prohibited",
+                "server delete prohibited",
+                "client transfer prohibited",
+                "server transfer prohibited",
+                "client update prohibited",
+                "server update prohibited",
+                "client delete prohibited"
+              ],
+              "events": [
+                {
+                  "eventAction": "registration",
+                  "eventDate": "2000-05-01T07:00:00Z",
+                  "eventActor": "Server Account"
+                },
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2032-01-19T04:14:07Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2023-12-14T00:41:59Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T12:50:51Z"
+                }
+              ],
+              "nameservers": [
+                {
+                  "ldhName": "a.nic.tv"
+                },
+                {
+                  "ldhName": "b.nic.tv"
+                },
+                {
+                  "ldhName": "c.nic.tv"
+                },
+                {
+                  "ldhName": "d.nic.tv"
+                }
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=nic.tv&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=nic.tv&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "nic.tv",
+                  "type": 2,
+                  "TTL": 172800,
+                  "data": "a.nic.tv."
+                },
+                {
+                  "name": "nic.tv",
+                  "type": 2,
+                  "TTL": 172800,
+                  "data": "b.nic.tv."
+                },
+                {
+                  "name": "nic.tv",
+                  "type": 2,
+                  "TTL": 172800,
+                  "data": "c.nic.tv."
+                },
+                {
+                  "name": "nic.tv",
+                  "type": 2,
+                  "TTL": 172800,
+                  "data": "d.nic.tv."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793019047997797000.tv",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.nic.tv/domain/dott-audit-1793019047997797000.tv",
+            "http": 404,
+            "final_url": "https://rdap.nic.tv/domain/dott-audit-1793019047997797000.tv",
+            "body": {
+              "errorCode": 404,
+              "title": "Not found",
+              "description": [
+                "No data found"
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793019047997797000.tv&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793019047997797000.tv&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "tv",
+                  "type": 6,
+                  "TTL": 900,
+                  "data": "a.nic.tv. admin.tldns.godaddy. 1793018690 1800 300 604800 1800"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "work",
+      "rdap": "https://rdap.nic.work/domain/AUDIT_LABEL.work",
+      "whois": "",
+      "dpml": "",
+      "iana": [
+        "https://rdap.nic.work/"
+      ],
+      "samples": [
+        {
+          "domain": "nic.work",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.nic.work/domain/nic.work",
+            "http": 200,
+            "final_url": "https://rdap.nic.work/domain/nic.work",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "nic.work",
+              "unicodeName": "nic.work",
+              "status": [
+                "server delete prohibited",
+                "server transfer prohibited",
+                "server update prohibited",
+                "server renew prohibited"
+              ],
+              "events": [
+                {
+                  "eventAction": "registration",
+                  "eventDate": "2021-09-07T04:15:49Z",
+                  "eventActor": "Server Account"
+                },
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2027-09-07T04:15:49Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2026-10-22T04:15:54Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T11:49:15Z"
+                }
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=nic.work&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=nic.work&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "nic.work",
+                  "type": 2,
+                  "TTL": 172800,
+                  "data": "a.nic.work."
+                },
+                {
+                  "name": "nic.work",
+                  "type": 2,
+                  "TTL": 172800,
+                  "data": "b.nic.work."
+                },
+                {
+                  "name": "nic.work",
+                  "type": 2,
+                  "TTL": 172800,
+                  "data": "c.nic.work."
+                },
+                {
+                  "name": "nic.work",
+                  "type": 2,
+                  "TTL": 172800,
+                  "data": "x.nic.work."
+                },
+                {
+                  "name": "nic.work",
+                  "type": 2,
+                  "TTL": 172800,
+                  "data": "y.nic.work."
+                },
+                {
+                  "name": "nic.work",
+                  "type": 2,
+                  "TTL": 172800,
+                  "data": "z.nic.work."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.work",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.nic.work/domain/dott-audit-1793015340682304000.work",
+            "http": 404,
+            "final_url": "https://rdap.nic.work/domain/dott-audit-1793015340682304000.work",
+            "body": {
+              "errorCode": 404,
+              "title": "Not found",
+              "description": [
+                "No data found"
+              ]
+            }
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.work&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.work&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "work",
+                  "type": 6,
+                  "TTL": 900,
+                  "data": "a.nic.work. admin.tldns.godaddy. 1793015099 1800 300 604800 1800"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
+      "tld": "xyz",
+      "rdap": "https://rdap.centralnic.com/xyz/domain/AUDIT_LABEL.xyz",
+      "whois": "whois.nic.xyz",
+      "dpml": "",
+      "iana": [
+        "https://rdap.centralnic.com/xyz/"
+      ],
+      "samples": [
+        {
+          "domain": "nic.xyz",
+          "kind": "registry_reference",
+          "rdap": {
+            "url": "https://rdap.centralnic.com/xyz/domain/nic.xyz",
+            "http": 200,
+            "final_url": "https://rdap.centralnic.com/xyz/domain/nic.xyz",
+            "body": {
+              "objectClassName": "domain",
+              "ldhName": "nic.xyz",
+              "status": [
+                "server renew prohibited",
+                "server update prohibited",
+                "server delete prohibited",
+                "server transfer prohibited"
+              ],
+              "events": [
+                {
+                  "eventAction": "registration",
+                  "eventDate": "2013-09-11T11:58:06.0Z"
+                },
+                {
+                  "eventAction": "expiration",
+                  "eventDate": "2027-09-11T23:59:59.0Z"
+                },
+                {
+                  "eventAction": "last update of RDAP database",
+                  "eventDate": "2026-10-26T11:49:10.0Z"
+                },
+                {
+                  "eventAction": "last changed",
+                  "eventDate": "2026-09-05T00:05:06.0Z"
+                }
+              ]
+            }
+          },
+          "whois": {
+            "server": "whois.nic.xyz",
+            "body": "Domain Name: NIC.XYZ\nRegistry Domain ID: D1465615-CNIC\nUpdated Date: 2026-09-05T00:05:06.0Z\nCreation Date: 2013-09-11T11:58:06.0Z\nRegistry Expiry Date: 2027-09-11T23:59:59.0Z\nDomain Status: serverRenewProhibited https://icann.org/epp#serverRenewProhibited\nDomain Status: serverUpdateProhibited https://icann.org/epp#serverUpdateProhibited\nDomain Status: serverDeleteProhibited https://icann.org/epp#serverDeleteProhibited\nDomain Status: serverTransferProhibited https://icann.org/epp#serverTransferProhibited",
+            "raw_bytes": 2008,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=nic.xyz&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=nic.xyz&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "nic.xyz",
+                  "type": 2,
+                  "TTL": 3600,
+                  "data": "x.nic.xyz."
+                },
+                {
+                  "name": "nic.xyz",
+                  "type": 2,
+                  "TTL": 3600,
+                  "data": "y.nic.xyz."
+                },
+                {
+                  "name": "nic.xyz",
+                  "type": 2,
+                  "TTL": 3600,
+                  "data": "generationxyz.nic.xyz."
+                },
+                {
+                  "name": "nic.xyz",
+                  "type": 2,
+                  "TTL": 3600,
+                  "data": "z.nic.xyz."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "rdap_expected": "taken",
+          "whois_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793015340682304000.xyz",
+          "kind": "unregistered_probe",
+          "rdap": {
+            "url": "https://rdap.centralnic.com/xyz/domain/dott-audit-1793015340682304000.xyz",
+            "http": 404,
+            "final_url": "https://rdap.centralnic.com/xyz/domain/dott-audit-1793015340682304000.xyz",
+            "body": {
+              "objectClassName": "error",
+              "errorCode": 404,
+              "title": "Object not found",
+              "description": [
+                "Object not found"
+              ]
+            }
+          },
+          "whois": {
+            "server": "whois.nic.xyz",
+            "body": "The queried object does not exist: DOMAIN NOT FOUND",
+            "raw_bytes": 118,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.xyz&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793015340682304000.xyz&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "xyz",
+                  "type": 6,
+                  "TTL": 900,
+                  "data": "ns0.centralnic.net. hostmaster.centralnic.net. 3000864047 900 1800 6048000 3600"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "rdap_expected": "available",
+          "whois_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    }
+  ],
+  "protection": {
+    "url": "https://rdap.identitydigital.services/rdap/domain/apple.dpml.zone",
+    "http": 200,
+    "final_url": "https://rdap.identitydigital.services/rdap/domain/apple.dpml.zone",
+    "body": {
+      "objectClassName": "domain",
+      "ldhName": "apple.dpml.zone",
+      "unicodeName": "apple.dpml.zone",
+      "status": [
+        "client delete prohibited",
+        "client transfer prohibited",
+        "client update prohibited"
+      ],
+      "events": [
+        {
+          "eventAction": "transfer",
+          "eventDate": "2023-08-13T17:51:16.851Z"
+        },
+        {
+          "eventAction": "expiration",
+          "eventDate": "2027-01-16T17:29:03.27Z"
+        },
+        {
+          "eventAction": "registration",
+          "eventDate": "2019-01-16T17:29:03.27Z"
+        },
+        {
+          "eventAction": "last changed",
+          "eventDate": "2026-08-12T01:31:16.057Z"
+        },
+        {
+          "eventAction": "last update of RDAP database",
+          "eventDate": "2026-10-26T11:49:21.854Z"
+        }
+      ]
+    }
+  },
+  "extra_references": [
+    {
+      "domain": "apple.dev",
+      "tld": "dev",
+      "rdap": {
+        "url": "https://pubapi.registry.google/rdap/domain/apple.dev",
+        "http": 200,
+        "final_url": "https://pubapi.registry.google/rdap/domain/apple.dev",
+        "body": {
+          "objectClassName": "domain",
+          "ldhName": "apple.dev",
+          "status": [
+            "client delete prohibited",
+            "client transfer prohibited",
+            "client update prohibited"
+          ],
+          "events": [
+            {
+              "eventAction": "registration",
+              "eventActor": "lexsynergy",
+              "eventDate": "2019-01-16T16:52:19.060Z"
+            },
+            {
+              "eventAction": "expiration",
+              "eventDate": "2027-01-16T16:52:19.060Z"
+            },
+            {
+              "eventAction": "last update of RDAP database",
+              "eventDate": "2026-10-26T11:53:57.836Z"
+            },
+            {
+              "eventAction": "last changed",
+              "eventDate": "2026-01-16T23:07:07.937Z"
+            }
+          ]
+        }
+      },
+      "dns": {
+        "url": "https://cloudflare-dns.com/dns-query?name=apple.dev&type=NS",
+        "http": 200,
+        "final_url": "https://cloudflare-dns.com/dns-query?name=apple.dev&type=NS",
+        "body": {
+          "Status": 0,
+          "Answer": [
+            {
+              "name": "apple.dev",
+              "type": 2,
+              "TTL": 43200,
+              "data": "a.ns.apple.com."
+            },
+            {
+              "name": "apple.dev",
+              "type": 2,
+              "TTL": 43200,
+              "data": "b.ns.apple.com."
+            },
+            {
+              "name": "apple.dev",
+              "type": 2,
+              "TTL": 43200,
+              "data": "c.ns.apple.com."
+            },
+            {
+              "name": "apple.dev",
+              "type": 2,
+              "TTL": 43200,
+              "data": "d.ns.apple.com."
+            }
+          ]
+        }
+      },
+      "expected": "taken",
+      "dns_expected": "taken"
+    },
+    {
+      "domain": "apple.app",
+      "tld": "app",
+      "rdap": {
+        "url": "https://pubapi.registry.google/rdap/domain/apple.app",
+        "http": 200,
+        "final_url": "https://pubapi.registry.google/rdap/domain/apple.app",
+        "body": {
+          "objectClassName": "domain",
+          "ldhName": "apple.app",
+          "status": [
+            "client delete prohibited",
+            "client transfer prohibited",
+            "client update prohibited"
+          ],
+          "events": [
+            {
+              "eventAction": "registration",
+              "eventActor": "csc",
+              "eventDate": "2018-03-29T16:00:32.497Z"
+            },
+            {
+              "eventAction": "expiration",
+              "eventDate": "2027-03-29T16:00:32.497Z"
+            },
+            {
+              "eventAction": "last update of RDAP database",
+              "eventDate": "2026-10-26T11:53:58.353Z"
+            },
+            {
+              "eventAction": "last changed",
+              "eventDate": "2026-03-29T23:04:54.754Z"
+            }
+          ]
+        }
+      },
+      "dns": {
+        "url": "https://cloudflare-dns.com/dns-query?name=apple.app&type=NS",
+        "http": 200,
+        "final_url": "https://cloudflare-dns.com/dns-query?name=apple.app&type=NS",
+        "body": {
+          "Status": 0,
+          "Answer": [
+            {
+              "name": "apple.app",
+              "type": 2,
+              "TTL": 43200,
+              "data": "a.ns.apple.com."
+            },
+            {
+              "name": "apple.app",
+              "type": 2,
+              "TTL": 43200,
+              "data": "b.ns.apple.com."
+            },
+            {
+              "name": "apple.app",
+              "type": 2,
+              "TTL": 43200,
+              "data": "c.ns.apple.com."
+            },
+            {
+              "name": "apple.app",
+              "type": 2,
+              "TTL": 43200,
+              "data": "d.ns.apple.com."
+            }
+          ]
+        }
+      },
+      "expected": "taken",
+      "dns_expected": "taken"
+    },
+    {
+      "domain": "apple.ai",
+      "tld": "ai",
+      "rdap": {
+        "url": "https://rdap.identitydigital.services/rdap/domain/apple.ai",
+        "http": 200,
+        "final_url": "https://rdap.identitydigital.services/rdap/domain/apple.ai",
+        "body": {
+          "objectClassName": "domain",
+          "ldhName": "apple.ai",
+          "unicodeName": "apple.ai",
+          "status": [
+            "client delete prohibited",
+            "client transfer prohibited",
+            "client update prohibited"
+          ],
+          "events": [
+            {
+              "eventAction": "transfer",
+              "eventDate": "2022-03-03T19:13:31.097Z"
+            },
+            {
+              "eventAction": "expiration",
+              "eventDate": "2028-06-01T04:02:33Z"
+            },
+            {
+              "eventAction": "registration",
+              "eventDate": "2017-12-16T04:02:33Z"
+            },
+            {
+              "eventAction": "last changed",
+              "eventDate": "2026-08-12T09:31:42.451Z"
+            },
+            {
+              "eventAction": "last update of RDAP database",
+              "eventDate": "2026-10-26T11:53:57.816Z"
+            }
+          ]
+        }
+      },
+      "dns": {
+        "url": "https://cloudflare-dns.com/dns-query?name=apple.ai&type=NS",
+        "http": 200,
+        "final_url": "https://cloudflare-dns.com/dns-query?name=apple.ai&type=NS",
+        "body": {
+          "Status": 0,
+          "Answer": [
+            {
+              "name": "apple.ai",
+              "type": 2,
+              "TTL": 86400,
+              "data": "a.ns.apple.com."
+            },
+            {
+              "name": "apple.ai",
+              "type": 2,
+              "TTL": 86400,
+              "data": "b.ns.apple.com."
+            },
+            {
+              "name": "apple.ai",
+              "type": 2,
+              "TTL": 86400,
+              "data": "c.ns.apple.com."
+            },
+            {
+              "name": "apple.ai",
+              "type": 2,
+              "TTL": 86400,
+              "data": "d.ns.apple.com."
+            }
+          ]
+        }
+      },
+      "expected": "taken",
+      "dns_expected": "taken"
+    },
+    {
+      "domain": "google.dev",
+      "tld": "dev",
+      "rdap": {
+        "url": "https://pubapi.registry.google/rdap/domain/google.dev",
+        "http": 200,
+        "final_url": "https://pubapi.registry.google/rdap/domain/google.dev",
+        "body": {
+          "objectClassName": "domain",
+          "ldhName": "google.dev",
+          "status": [
+            "client delete prohibited",
+            "client transfer prohibited",
+            "client update prohibited"
+          ],
+          "events": [
+            {
+              "eventAction": "registration",
+              "eventActor": "CharlestonRoad",
+              "eventDate": "2018-06-13T22:30:20.594Z"
+            },
+            {
+              "eventAction": "expiration",
+              "eventDate": "2027-06-13T22:30:20.594Z"
+            },
+            {
+              "eventAction": "last update of RDAP database",
+              "eventDate": "2026-10-26T11:53:58.867Z"
+            },
+            {
+              "eventAction": "last changed",
+              "eventDate": "2025-10-23T18:23:49.881Z"
+            }
+          ]
+        }
+      },
+      "dns": {
+        "url": "https://cloudflare-dns.com/dns-query?name=google.dev&type=NS",
+        "http": 200,
+        "final_url": "https://cloudflare-dns.com/dns-query?name=google.dev&type=NS",
+        "body": {
+          "Status": 0,
+          "Answer": [
+            {
+              "name": "google.dev",
+              "type": 2,
+              "TTL": 21600,
+              "data": "ns4.googledomains.com."
+            },
+            {
+              "name": "google.dev",
+              "type": 2,
+              "TTL": 21600,
+              "data": "ns1.googledomains.com."
+            },
+            {
+              "name": "google.dev",
+              "type": 2,
+              "TTL": 21600,
+              "data": "ns2.googledomains.com."
+            },
+            {
+              "name": "google.dev",
+              "type": 2,
+              "TTL": 21600,
+              "data": "ns3.googledomains.com."
+            }
+          ]
+        }
+      },
+      "expected": "taken",
+      "dns_expected": "taken"
+    },
+    {
+      "domain": "microsoft.app",
+      "tld": "app",
+      "rdap": {
+        "url": "https://pubapi.registry.google/rdap/domain/microsoft.app",
+        "http": 200,
+        "final_url": "https://pubapi.registry.google/rdap/domain/microsoft.app",
+        "body": {
+          "objectClassName": "domain",
+          "ldhName": "microsoft.app",
+          "status": [
+            "client delete prohibited",
+            "client transfer prohibited",
+            "client update prohibited"
+          ],
+          "events": [
+            {
+              "eventAction": "registration",
+              "eventActor": "comlaude",
+              "eventDate": "2018-03-29T16:43:51.537Z"
+            },
+            {
+              "eventAction": "expiration",
+              "eventDate": "2027-03-29T16:43:51.537Z"
+            },
+            {
+              "eventAction": "last update of RDAP database",
+              "eventDate": "2026-10-26T11:53:59.367Z"
+            },
+            {
+              "eventAction": "last changed",
+              "eventDate": "2026-03-04T23:15:16.470Z"
+            }
+          ]
+        }
+      },
+      "dns": {
+        "url": "https://cloudflare-dns.com/dns-query?name=microsoft.app&type=NS",
+        "http": 200,
+        "final_url": "https://cloudflare-dns.com/dns-query?name=microsoft.app&type=NS",
+        "body": {
+          "Status": 0,
+          "Answer": [
+            {
+              "name": "microsoft.app",
+              "type": 2,
+              "TTL": 172800,
+              "data": "ns1-06.azure-dns.com."
+            },
+            {
+              "name": "microsoft.app",
+              "type": 2,
+              "TTL": 172800,
+              "data": "ns2-06.azure-dns.net."
+            },
+            {
+              "name": "microsoft.app",
+              "type": 2,
+              "TTL": 172800,
+              "data": "ns3-06.azure-dns.org."
+            },
+            {
+              "name": "microsoft.app",
+              "type": 2,
+              "TTL": 172800,
+              "data": "ns4-06.azure-dns.info."
+            }
+          ]
+        }
+      },
+      "expected": "taken",
+      "dns_expected": "taken"
+    },
+    {
+      "domain": "microsoft.dev",
+      "tld": "dev",
+      "rdap": {
+        "url": "https://pubapi.registry.google/rdap/domain/microsoft.dev",
+        "http": 404,
+        "final_url": "https://pubapi.registry.google/rdap/domain/microsoft.dev",
+        "body": {
+          "errorCode": 404,
+          "title": "Not Found",
+          "description": [
+            "microsoft.dev blocked by BSA"
+          ]
+        }
+      },
+      "dns": {
+        "url": "https://cloudflare-dns.com/dns-query?name=microsoft.dev&type=NS",
+        "http": 200,
+        "final_url": "https://cloudflare-dns.com/dns-query?name=microsoft.dev&type=NS",
+        "body": {
+          "Status": 3,
+          "Authority": [
+            {
+              "name": "dev",
+              "type": 6,
+              "TTL": 300,
+              "data": "ns-tld1.charlestonroadregistry.com. cloud-dns-hostmaster.google.com. 1 21600 3600 259200 300"
+            }
+          ]
+        }
+      },
+      "expected": "protected",
+      "dns_expected": "unknown"
+    },
+    {
+      "domain": "microsoft.ai",
+      "tld": "ai",
+      "rdap": {
+        "url": "https://rdap.identitydigital.services/rdap/domain/microsoft.ai",
+        "http": 200,
+        "final_url": "https://rdap.identitydigital.services/rdap/domain/microsoft.ai",
+        "body": {
+          "objectClassName": "domain",
+          "ldhName": "microsoft.ai",
+          "unicodeName": "microsoft.ai",
+          "status": [
+            "client transfer prohibited"
+          ],
+          "events": [
+            {
+              "eventAction": "expiration",
+              "eventDate": "2027-09-14T22:41:29Z"
+            },
+            {
+              "eventAction": "registration",
+              "eventDate": "2017-12-15T22:41:29Z"
+            },
+            {
+              "eventAction": "last changed",
+              "eventDate": "2026-08-12T05:05:11.314Z"
+            },
+            {
+              "eventAction": "last update of RDAP database",
+              "eventDate": "2026-10-26T11:54:00.113Z"
+            }
+          ]
+        }
+      },
+      "dns": {
+        "url": "https://cloudflare-dns.com/dns-query?name=microsoft.ai&type=NS",
+        "http": 200,
+        "final_url": "https://cloudflare-dns.com/dns-query?name=microsoft.ai&type=NS",
+        "body": {
+          "Status": 0,
+          "Answer": [
+            {
+              "name": "microsoft.ai",
+              "type": 2,
+              "TTL": 172800,
+              "data": "ns1-04.azure-dns.com."
+            },
+            {
+              "name": "microsoft.ai",
+              "type": 2,
+              "TTL": 172800,
+              "data": "ns2-04.azure-dns.net."
+            },
+            {
+              "name": "microsoft.ai",
+              "type": 2,
+              "TTL": 172800,
+              "data": "ns3-04.azure-dns.org."
+            },
+            {
+              "name": "microsoft.ai",
+              "type": 2,
+              "TTL": 172800,
+              "data": "ns4-04.azure-dns.info."
+            }
+          ]
+        }
+      },
+      "expected": "taken",
+      "dns_expected": "taken"
+    },
+    {
+      "domain": "apple.bot",
+      "tld": "bot",
+      "rdap": {
+        "url": "https://rdap.nominet.uk/bot/domain/apple.bot",
+        "http": 200,
+        "final_url": "https://rdap.nominet.uk/bot/domain/apple.bot",
+        "body": {
+          "objectClassName": "domain",
+          "ldhName": "apple.bot",
+          "unicodeName": "apple.bot",
+          "status": [
+            "client transfer prohibited",
+            "client update prohibited",
+            "client delete prohibited"
+          ],
+          "events": [
+            {
+              "eventAction": "registration",
+              "eventActor": "292",
+              "eventDate": "2017-11-28T22:02:55.392Z"
+            },
+            {
+              "eventAction": "last changed",
+              "eventActor": "292",
+              "eventDate": "2026-07-22T08:00:33Z"
+            },
+            {
+              "eventAction": "expiration",
+              "eventDate": "2026-11-28T22:02:55.392Z"
+            },
+            {
+              "eventAction": "last update of RDAP database",
+              "eventDate": "2026-10-26T11:54:00.648595454Z"
+            }
+          ]
+        }
+      },
+      "dns": {
+        "url": "https://cloudflare-dns.com/dns-query?name=apple.bot&type=NS",
+        "http": 200,
+        "final_url": "https://cloudflare-dns.com/dns-query?name=apple.bot&type=NS",
+        "body": {
+          "Status": 2
+        }
+      },
+      "expected": "taken",
+      "dns_expected": "unknown"
+    }
+  ],
+  "protection_clear": {
+    "url": "https://rdap.identitydigital.services/rdap/domain/dott-audit-1793015340682304000.dpml.zone",
+    "http": 404,
+    "final_url": "https://rdap.identitydigital.services/rdap/domain/dott-audit-1793015340682304000.dpml.zone",
+    "body": {
+      "errorCode": 404,
+      "title": "Object not found",
+      "description": [
+        "Object not found"
+      ]
+    }
+  },
+  "additional_capture_at": "2026-10-26T12:50:57.134382+00:00"
+}

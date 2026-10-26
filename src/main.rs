@@ -1,17 +1,10 @@
 use colored::*;
-use crossterm::{
-    cursor,
-    event::{self, Event, KeyCode, KeyModifiers},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
-};
-use futures::{future::join_all, FutureExt};
+use futures::{future::join_all, stream::FuturesUnordered};
 use reqwest::Client;
 use std::{
     fs,
     io::{self, BufRead, IsTerminal, Write},
     path::PathBuf,
-    sync::atomic::{AtomicBool, Ordering},
     time::Duration,
 };
 use std::sync::Arc;
@@ -28,12 +21,19 @@ mod notices;
 mod utils;
 mod update;
 mod pricing;
+mod ui;
+mod shortlist;
+mod history;
+mod protection;
+mod commands;
+#[cfg(test)]
+mod registry_audit;
 
 use clap::Parser;
 use cli::Cli;
-use config::{ALL_TLDS, is_likely_premium, rdap_url, tld_rank, whois_server};
-use model::{Availability, DomainDates, WatchEntry};
-use utils::{days_until, parse_date, parse_prose_date};
+use config::{ALL_TLDS, rdap_url, tld_rank, whois_server};
+use model::{Availability, DomainDates, WatchEntry, UnknownReason, ProtectionReason};
+use utils::{parse_date, parse_prose_date};
 
 fn valid_label(name: &str) -> bool {
     !name.is_empty() && name.len() <= 63
@@ -57,6 +57,19 @@ fn parse_search(raw: &str) -> Result<(String, Option<&'static str>), String> {
     Ok((name.to_string(), tld))
 }
 
+// 'name+', 'name+.tld' or 'name.tld+'; an empty name ('+', '+.tld') reuses the last search.
+fn parse_suggest(input: &str) -> Option<Result<(Option<String>, Option<&'static str>), String>> {
+    let (head, tail) = input.split_once('+')?;
+    if !tail.is_empty() && !tail.starts_with('.') { return None; }
+    let spec = format!("{head}{tail}");
+    Some(match spec.strip_prefix('.') {
+        Some(suffix) => ALL_TLDS.iter().copied().find(|&t| t == suffix)
+            .map(|tld| (None, Some(tld))).ok_or_else(|| format!("Unsupported TLD: {suffix}")),
+        None if spec.is_empty() => Ok((None, None)),
+        None => parse_search(&spec).map(|(name, tld)| (Some(name), tld)),
+    })
+}
+
 fn parse_tlds(raw: &str) -> Result<Vec<&'static str>, String> {
     let mut tlds = Vec::new();
     for suffix in raw.split(',') {
@@ -77,61 +90,104 @@ fn search_tlds(explicit: Option<&'static str>, selected: Option<&[&'static str]>
     }
 }
 
-async fn whois_check(name: &str, tld: &str) -> Availability {
-    let server = match whois_server(tld) {
-        Some(s) => s,
-        None    => return Availability::Unknown,
-    };
-    let addr  = format!("{}:43", server);
-    let query = format!("{}.{}\r\n", name, tld);
-
-    // some registries (e.g. whois.registry.co) are slow to accept — give them more time
-    let connect_secs = match server {
-        "whois.registry.co" => 8,
-        _ => 4,
-    };
-
-    let mut stream = match tokio::time::timeout(
-        Duration::from_secs(connect_secs),
-        TcpStream::connect(&addr),
-    ).await {
-        Ok(Ok(s)) => s,
-        _         => return Availability::Unknown,
-    };
-
-    // CentralNic (whois.registry.co) sends a banner on connect — drain it before querying
-    if server == "whois.registry.co" {
-        let mut banner = vec![0u8; 512];
-        let _ = tokio::time::timeout(
-            Duration::from_millis(300),
-            stream.read(&mut banner),
-        ).await;
-    }
-
-    if stream.write_all(query.as_bytes()).await.is_err() {
-        return Availability::Unknown;
-    }
-
-    let mut response = String::new();
-    let _ = tokio::time::timeout(
-        Duration::from_secs(8),
-        stream.read_to_string(&mut response),
-    ).await;
-
-    parse_whois(&response, tld)
+// Exact suffix splits precede ordinary results and ignore extension selection.
+// Explicit domain searches remain exact. Only supported registry routes qualify.
+fn search_domains(name: &str, explicit: Option<&'static str>, tlds: &[&'static str]) -> Vec<(String, &'static str)> {
+    if let Some(tld) = explicit { return vec![(name.into(), tld)]; }
+    let mut matches: Vec<_> = ALL_TLDS.iter().copied().filter_map(|tld| {
+        name.strip_suffix(tld).filter(|label| valid_label(label)).map(|label| (label.to_owned(), tld))
+    }).collect();
+    matches.sort_by_key(|(_, tld)| (std::cmp::Reverse(tld.len()), tld_rank(tld)));
+    matches.extend(tlds.iter().map(|tld| (name.to_owned(), *tld)));
+    let mut seen = std::collections::HashSet::new();
+    matches.retain(|domain| seen.insert(domain.clone()));
+    matches
 }
 
-fn parse_whois(response: &str, tld: &str) -> Availability {
-    let lower = response.to_lowercase();
-    // whois.nic.so echoes "Domain Name:" in its not-found reply, so this unambiguous
-    // phrase must win over the Taken check below.
-    if lower.contains("object does not exist") || lower.contains("no object found") {
-        return Availability::Available;
+async fn whois_check(name: &str, tld: &str) -> Availability {
+    let Some(server) = whois_server(tld) else { return Availability::Unknown(UnknownReason::NoRegistryService); };
+    let drain_banner = config::whois_needs_banner(tld);
+    let connect_secs = if drain_banner { 8 } else { 4 };
+    whois_query(&format!("{server}:43"), &format!("{name}.{tld}"), tld,
+        drain_banner, Duration::from_secs(connect_secs), Duration::from_secs(8)).await
+}
+
+async fn whois_query(addr: &str, domain: &str, tld: &str, drain_banner: bool, connect_timeout: Duration, response_timeout: Duration) -> Availability {
+    let mut stream = match tokio::time::timeout(connect_timeout, TcpStream::connect(addr)).await {
+        Ok(Ok(stream)) => stream,
+        Ok(Err(_)) => return Availability::Unknown(UnknownReason::Unreachable),
+        Err(_) => return Availability::Unknown(UnknownReason::Timeout),
+    };
+    if drain_banner {
+        let mut banner = [0; 512];
+        let _ = tokio::time::timeout(Duration::from_millis(300), stream.read(&mut banner)).await;
     }
-    // check Taken first: CentralNic's .co footer contains the word "available"
-    // in boilerplate, which otherwise tripped the Available heuristic. Only a record field at the
-    // start of a line counts, so footers or rate-limit text mentioning "domain:" can't match.
-    if lower.lines().any(|l| { let l = l.trim_start(); l.starts_with("domain name:") || l.starts_with("domain:") }) {
+    match tokio::time::timeout(response_timeout, stream.write_all(format!("{domain}\r\n").as_bytes())).await {
+        Ok(Ok(())) => {}
+        Ok(Err(_)) => return Availability::Unknown(UnknownReason::Unreachable),
+        Err(_) => return Availability::Unknown(UnknownReason::Timeout),
+    }
+    let mut response = String::new();
+    // Never interpret an interrupted or oversized record as a complete reply.
+    let mut reader = stream.take(256 * 1024 + 1);
+    match tokio::time::timeout(response_timeout, reader.read_to_string(&mut response)).await {
+        Ok(Ok(_)) if response.len() <= 256 * 1024 => parse_whois_for(&response, tld, Some(domain)),
+        Ok(Err(error)) if error.kind() != io::ErrorKind::InvalidData => Availability::Unknown(UnknownReason::Unreachable),
+        Ok(_) => Availability::Unknown(UnknownReason::InvalidResponse),
+        Err(_) => Availability::Unknown(UnknownReason::Timeout),
+    }
+}
+
+#[cfg(test)]
+fn parse_whois(response: &str, tld: &str) -> Availability { parse_whois_for(response, tld, None) }
+
+fn parse_whois_for(response: &str, tld: &str, expected: Option<&str>) -> Availability {
+    let lower = response.to_lowercase();
+    // Match explicit errors, not registry footers describing their rate policy.
+    if lower.lines().any(|line| {
+        let line = line.trim().trim_start_matches('%').trim();
+        ["whois limit exceeded", "query rate exceeded", "rate limit exceeded", "too many queries",
+         "quota exceeded", "maximum query rate exceeded", "error: rate limit", "error: too many queries"]
+            .iter().any(|prefix| line.starts_with(prefix))
+    }) { return Availability::Unknown(UnknownReason::RateLimited); }
+    if lower.lines().any(|line| {
+        let line = line.trim().trim_start_matches('%').trim();
+        ["whois service not available", "whois service unavailable", "service temporarily unavailable", "access denied"]
+            .iter().any(|prefix| line.starts_with(prefix))
+    }) { return Availability::Unknown(UnknownReason::ServiceUnavailable); }
+    if lower.lines().any(|line| {
+        let line = line.trim().trim_start_matches('%').trim();
+        line.starts_with("error:") || line.starts_with("error ")
+    }) { return Availability::Unknown(UnknownReason::InvalidResponse); }
+    let lines: Vec<_> = lower.lines().map(str::trim).collect();
+    let valid_domain = |domain: &str| {
+        domain.rsplit_once('.').is_some_and(|(name, suffix)| valid_label(name) && suffix == tld)
+            && expected.is_none_or(|expected| domain.eq_ignore_ascii_case(expected))
+    };
+    let mut records = Vec::new();
+    for (index, line) in lines.iter().enumerate() {
+        if let Some(value) = line.strip_prefix("domain name:").or_else(|| line.strip_prefix("domain:")) {
+            let value = value.trim();
+            let value = if value.is_empty() { lines.get(index + 1).copied().unwrap_or("") } else { value };
+            if !valid_domain(value) { return Availability::Unknown(UnknownReason::InvalidResponse); }
+            records.push(value);
+        }
+    }
+    let no_object = lines.iter().any(|line| matches!(*line,
+        "the queried object does not exist: no object found" | "the queried object does not exist: domain not found" |
+        "object does not exist" | "no object found"));
+    // .so echoes the queried Domain Name in a missing-object response. Only
+    // accept that special case when there is no registration record alongside it.
+    if tld == "so" && no_object {
+        let has_record = lines.iter().any(|line| line.starts_with("registry domain id:") || line.starts_with("creation date:"));
+        return if has_record { Availability::Unknown(UnknownReason::InvalidResponse) } else { Availability::Available };
+    }
+    let reserved = lines.iter().any(|line| {
+        line.starts_with("domain is reserved") || line.starts_with("domain name is reserved") || line.starts_with("this domain is reserved")
+            || matches!(*line, "status: reserved" | "domain status: reserved" | "status: not available")
+    });
+    if reserved { return Availability::Protected(ProtectionReason::Reserved); }
+    if !records.is_empty() {
         let dates = if tld == "gg" {
             // whois.gg is "registered until cancelled" — no expiry published.
             // registration date is prose: "Registered on 26th February 2015".
@@ -153,100 +209,133 @@ fn parse_whois(response: &str, tld: &str) -> Availability {
             }
         };
         Availability::Taken(dates)
-    } else if lower.contains("domain is reserved") || lower.contains("domain name is reserved")
-        || lower.lines().any(|line| matches!(line.trim(), "status: reserved" | "domain status: reserved" | "status: not available")) {
-        Availability::Protected
-    } else if lower.contains("no match")
-        || lower.contains("not found")
-        || lower.contains("no entries found")
-        || lower.contains("object does not exist")
-        || lower.contains("domain not found")
-        || lower.lines().any(|line| matches!(line.trim(), "available" | "status: available" | "domain status: available"))
-    {
-        Availability::Available
     } else {
-        Availability::Unknown
+        let missing = no_object || lines.iter().any(|line| {
+            let line = line.trim_start_matches('%').trim();
+            if line == "domain not found." || line == "domain not found" { return true; }
+            if tld == "gg" && line == "not found" { return true; }
+            if tld == "si" && matches!(line, "no entries found for the selected source(s)." | "no entries found") { return true; }
+            if let Some(name) = line.strip_prefix("no match for ") {
+                return valid_domain(name.trim_end_matches('.').trim_matches('"').trim());
+            }
+            if matches!(tld, "click" | "fun") {
+                if let Some(name) = line.strip_prefix(">>> domain ").and_then(|line| line.strip_suffix(" is available for registration")) {
+                    return valid_domain(name);
+                }
+            }
+            matches!(line, "available" | "status: available" | "domain status: available")
+        });
+        if missing { Availability::Available } else { Availability::Unknown(UnknownReason::InvalidResponse) }
     }
+
 }
 
 async fn dns_check(client: &Client, name: &str, tld: &str) -> Availability {
     let url = format!("https://cloudflare-dns.com/dns-query?name={}.{}&type=NS", name, tld);
+    dns_query(client, &url, &format!("{name}.{tld}")).await
+}
+
+async fn dns_query(client: &Client, url: &str, domain: &str) -> Availability {
     let res = client
-        .get(&url)
+        .get(url)
         .header("Accept", "application/dns-json")
         .timeout(Duration::from_secs(4))
         .send().await;
     match res {
-        Ok(r) => {
-            let json: serde_json::Value = r.json().await.unwrap_or_default();
-            // Status=0 alone isn't enough: some registries (e.g. .fm) return NOERROR
-            // with empty Answer for non-existent domains. Require actual NS records.
-            let has_ns = json["Answer"].as_array().is_some_and(|a| {
-                a.iter().any(|record| record["type"].as_u64() == Some(2))
-            });
-            match json["Status"].as_i64() {
-                Some(0) if has_ns => Availability::Taken(DomainDates::default()),
-                _ => Availability::Unknown,
-            }
-        }
-        Err(_) => Availability::Unknown,
+        Ok(response) if response.status().is_success() => response.json::<serde_json::Value>().await
+            .map(|json| parse_dns_response(&json, domain)).unwrap_or(Availability::Unknown(UnknownReason::Inconclusive)),
+        _ => Availability::Unknown(UnknownReason::Inconclusive),
     }
 }
 
-// None means the server never answered; any HTTP response is Some, even when inconclusive.
-async fn http_query(client: &Client, url: &str, sem: &Semaphore) -> Option<Availability> {
+fn parse_dns_response(json: &serde_json::Value, domain: &str) -> Availability {
+    let has_ns = json["Answer"].as_array().is_some_and(|answers| answers.iter().any(|record| {
+        record["type"].as_u64() == Some(2)
+            && record["name"].as_str().is_some_and(|owner| owner.trim_end_matches('.').eq_ignore_ascii_case(domain))
+            && record["data"].as_str().is_some_and(|host| !host.trim_end_matches('.').is_empty()
+                && host.trim_end_matches('.').split('.').all(valid_label))
+    }));
+    if json["Status"].as_u64() == Some(0) && has_ns { Availability::Taken(DomainDates::default()) }
+    else { Availability::Unknown(UnknownReason::Inconclusive) }
+}
+
+// Err means no HTTP response arrived, so a bootstrap retry is allowed.
+// An HTTP response with an inconclusive body remains Ok(Unknown(reason)).
+async fn http_query(client: &Client, url: &str, sem: &Semaphore) -> Result<Availability, UnknownReason> {
+    http_query_with_timeout(client, url, sem, Duration::from_secs(5)).await
+}
+
+async fn http_query_with_timeout(client: &Client, url: &str, sem: &Semaphore, timeout: Duration) -> Result<Availability, UnknownReason> {
     let _permit = sem.acquire().await.unwrap();
-    match client.get(url).header("User-Agent", "Mozilla/5.0").header("Accept", "application/json").timeout(Duration::from_secs(5)).send().await {
-        Ok(resp) => {
-            let status = resp.status().as_u16();
-            // rdap.org answers 404 itself when it knows no RDAP server for a TLD ("No RDAP service
-            // is available"); only a registry's own 404 means the name isn't registered.
-            let from_bootstrap = resp.url().host_str() == Some("rdap.org");
-            let body = resp.text().await.unwrap_or_default();
-            Some(match status {
-                200 => {
-                    let valid_domain = serde_json::from_str::<serde_json::Value>(&body).ok()
-                        .is_some_and(|j| j["objectClassName"].as_str() == Some("domain"));
-                    if !valid_domain { return Some(Availability::Unknown); }
-                    let dates = serde_json::from_str::<serde_json::Value>(&body).ok()
-                        .and_then(|j| j["events"].as_array().cloned())
-                        .map(|events| {
-                            let find = |keyword: &str| -> Option<String> {
-                                events.iter()
-                                    .find(|e| e["eventAction"].as_str()
-                                        .map(|a| a == keyword)
-                                        .unwrap_or(false))
-                                    .and_then(|e| e["eventDate"].as_str())
-                                    .and_then(parse_date)
-                            };
-                            DomainDates {
-                                registered: find("registration"),
-                                updated:    find("last changed"),
-                                expires:    events.iter()
-                                    .find(|e| e["eventAction"].as_str()
-                                        .map(|a| a.contains("expir"))
-                                        .unwrap_or(false))
-                                    .and_then(|e| e["eventDate"].as_str())
-                                    .and_then(parse_date),
-                            }
-                        })
-                        .unwrap_or_default();
-                    Availability::Taken(dates)
-                }
-                404 => {
-                    if body.to_ascii_lowercase().contains("blocked") {
-                        Availability::Protected
-                    } else if !from_bootstrap && serde_json::from_str::<serde_json::Value>(&body).ok()
-                        .is_some_and(|j| j["errorCode"].as_u64() == Some(404)) {
-                        Availability::Available
-                    } else {
-                        Availability::Unknown
-                    }
-                }
-                _ => Availability::Unknown,
-            })
+    let mut response = client.get(url).header("User-Agent", "Mozilla/5.0").header("Accept", "application/json")
+        .timeout(timeout).send().await.map_err(|error| if error.is_timeout() { UnknownReason::Timeout } else { UnknownReason::Unreachable })?;
+    let status = response.status().as_u16();
+    let from_bootstrap = response.url().host_str() == Some("rdap.org");
+    // Status codes are useful even if the service sends a broken error body.
+    let error = match status {
+        429 => Some(UnknownReason::RateLimited),
+        408 | 504 => Some(UnknownReason::Timeout),
+        401 | 403 | 500..=599 => Some(UnknownReason::ServiceUnavailable),
+        200 | 404 => None,
+        _ => Some(UnknownReason::InvalidResponse),
+    };
+    if let Some(reason) = error { return Ok(Availability::Unknown(reason)); }
+    let mut bytes = Vec::new();
+    loop {
+        match response.chunk().await {
+            Ok(Some(chunk)) if bytes.len() + chunk.len() <= 2_000_000 => bytes.extend_from_slice(&chunk),
+            Ok(None) => break,
+            Err(error) if error.is_timeout() => return Ok(Availability::Unknown(UnknownReason::Timeout)),
+            _ => return Ok(Availability::Unknown(UnknownReason::InvalidResponse)),
         }
-        Err(_) => None,
+    }
+    let Ok(body) = String::from_utf8(bytes) else { return Ok(Availability::Unknown(UnknownReason::InvalidResponse)); };
+    let expected = reqwest::Url::parse(url).ok().and_then(|url| url.path_segments()?.next_back().map(str::to_owned));
+    Ok(parse_rdap_response(status, &body, from_bootstrap, expected.as_deref()))
+}
+
+fn parse_rdap_response(status: u16, body: &str, from_bootstrap: bool, expected: Option<&str>) -> Availability {
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(body) else { return Availability::Unknown(UnknownReason::InvalidResponse); };
+    let mut messages = vec![json["title"].as_str().unwrap_or("")];
+    if let Some(descriptions) = json["description"].as_array() { messages.extend(descriptions.iter().filter_map(|line| line.as_str())); }
+    let messages = messages.into_iter().map(|message| message.to_ascii_lowercase()).collect::<Vec<_>>();
+    let no_service = messages.iter().any(|message| ["no rdap service", "unsupported tld", "tld not supported"].iter().any(|phrase| message.contains(phrase)));
+    let protected = messages.iter().any(|message| {
+        matches!(message.trim(), "blocked" | "reserved" | "domain blocked" | "domain name blocked" | "reserved domain")
+            || ["domain is blocked", "domain name is blocked", "domain is reserved", "domain name is reserved"].iter().any(|phrase| message.contains(phrase))
+            || expected.is_some_and(|domain| message.strip_prefix(&domain.to_ascii_lowercase()).and_then(|rest| rest.strip_prefix(' '))
+                .is_some_and(|rest| matches!(rest, "blocked" | "reserved") || rest.starts_with("blocked by ") || rest.starts_with("reserved by ")))
+    });
+    match status {
+        200 if json["objectClassName"].as_str() == Some("domain") && json.get("errorCode").is_none()
+            && json["ldhName"].as_str().is_some_and(|name| name.rsplit_once('.').is_some_and(|(label, _)| valid_label(label))
+                && expected.is_none_or(|expected| name.eq_ignore_ascii_case(expected))) => {
+            let events = json["events"].as_array();
+            let date = |action: &str| events.and_then(|events| events.iter().find(|e| e["eventAction"].as_str() == Some(action)))
+                .and_then(|event| event["eventDate"].as_str()).and_then(parse_date);
+            let expires = events.and_then(|events| events.iter().find(|event| event["eventAction"].as_str().is_some_and(|action| action.contains("expir"))))
+                .and_then(|event| event["eventDate"].as_str()).and_then(parse_date);
+            Availability::Taken(DomainDates { registered: date("registration"), updated: date("last changed"), expires })
+        }
+        404 if json["errorCode"].as_u64() == Some(404)
+            && (json.get("objectClassName").is_none() || json["objectClassName"].as_str() == Some("error")) => {
+            if from_bootstrap || no_service {
+                Availability::Unknown(if no_service { UnknownReason::NoRegistryService } else { UnknownReason::ServiceUnavailable })
+            } else if protected { Availability::Protected(ProtectionReason::Reserved) }
+            else { Availability::Available }
+        }
+        _ => Availability::Unknown(UnknownReason::InvalidResponse),
+    }
+}
+
+async fn rdap_check(client: &Client, primary: &str, fallback: &str, sem: &Semaphore) -> Availability {
+    match http_query(client, primary, sem).await {
+        Ok(status) => status,
+        Err(first) if primary != fallback => match http_query(client, fallback, sem).await {
+            Ok(Availability::Unknown(second)) | Err(second) => Availability::Unknown(first.combine(second)),
+            Ok(status) => status,
+        },
+        Err(reason) => Availability::Unknown(reason),
     }
 }
 
@@ -270,15 +359,18 @@ fn merge_results(rdap: Availability, whois: Availability, dns: Availability) -> 
         return Availability::Taken(dates);
     }
 
-    let rdap_vs_whois = match (rdap, whois) {
-        (Availability::Unknown, whois)                     => whois,
-        (Availability::Taken(a), Availability::Taken(b))   => Availability::Taken(merge_dates(a, b)),
-        (rdap, _)                                          => rdap,
+    let registry = match (rdap, whois) {
+        (Availability::Unknown(a), Availability::Unknown(b)) => Availability::Unknown(a.combine(b)),
+        (Availability::Unknown(_), whois) => whois,
+        (Availability::Taken(a), Availability::Taken(b)) => Availability::Taken(merge_dates(a, b)),
+        (_, Availability::Taken(dates)) => Availability::Taken(dates),
+        (Availability::Available, Availability::Protected(reason)) => Availability::Protected(reason),
+        (rdap, _) => rdap,
     };
-
-    match rdap_vs_whois {
-        Availability::Unknown => dns,
-        other => other,
+    match (registry, dns) {
+        (Availability::Unknown(a), Availability::Unknown(b)) => Availability::Unknown(a.combine(b)),
+        (Availability::Unknown(_), dns) => dns,
+        (registry, _) => registry,
     }
 }
 
@@ -315,107 +407,75 @@ async fn check_domain_cached(
     (domain, av)
 }
 
+struct WhoisTask(tokio::task::JoinHandle<Availability>);
+
+impl Drop for WhoisTask {
+    fn drop(&mut self) { self.0.abort(); }
+}
+
 async fn check_domain(client: Client, name: String, tld: &'static str, sem: Arc<Semaphore>) -> (String, Availability) {
     let domain = format!("{}.{}", name, tld);
-    if !valid_label(&name) { return (domain, Availability::Unknown); }
+    if !valid_label(&name) { return (domain, Availability::Unknown(UnknownReason::Inconclusive)); }
 
     let rdap_fut = async {
-        let Some(primary) = rdap_url(&name, tld) else {
-            return Availability::Unknown;
-        };
-        // rdap.org only redirects to the registry, so retry through it only when the
-        // registry gave no response; an empty 404 or a 429 would just repeat.
-        match http_query(&client, &primary, &sem).await {
-            Some(result) => result,
-            None => {
-                let fallback = format!("https://rdap.org/domain/{}.{}", name, tld);
-                if fallback != primary { http_query(&client, &fallback, &sem).await.unwrap_or(Availability::Unknown) }
-                else { Availability::Unknown }
-            }
-        }
+        let Some(primary) = rdap_url(&name, tld) else { return Availability::Unknown(UnknownReason::NoRegistryService); };
+        let fallback = format!("https://rdap.org/domain/{name}.{tld}");
+        rdap_check(&client, &primary, &fallback, &sem).await
     };
 
     // WHOIS is the slowest source (TCP read can hang up to 8s). Spawn it cancellable
-    // and only await if RDAP couldn't give us a confident answer.
-    let whois_handle = tokio::spawn({
+    // and await it for negative or inconclusive RDAP replies.
+    let whois_handle = WhoisTask(tokio::spawn({
         let name = name.clone();
         async move { whois_check(&name, tld).await }
-    });
+    }));
 
-    // RDAP "taken" is final under DNS > RDAP > WHOIS precedence, so don't wait on a slow
-    // DNS answer (Cloudflare can take ~2s on some names).
-    let dns_fut = dns_check(&client, &name, tld);
-    tokio::pin!(rdap_fut, dns_fut);
-    let mut dns_done = None;
-    let rdap_result = tokio::select! {
-        rdap = &mut rdap_fut => rdap,
-        dns = &mut dns_fut => { dns_done = Some(dns); rdap_fut.await }
-    };
-    let dns_result = match dns_done {
-        Some(dns) => dns,
-        None if matches!(rdap_result, Availability::Taken(_)) => Availability::Unknown,
-        None => dns_fut.await,
-    };
-
-    let whois_result = if matches!(rdap_result, Availability::Unknown) {
-        whois_handle.await.unwrap_or(Availability::Unknown)
-    } else {
-        whois_handle.abort();
-        Availability::Unknown
-    };
-
-    (domain, merge_results(rdap_result, whois_result, dns_result))
-}
-
-fn format_result(domain: &str, availability: &Availability, pad: usize, prices: &pricing::Catalog) -> String {
-    let padded = format!("{:<width$}", domain, width = pad);
-    match availability {
-        Availability::Available   => {
-            let price_str = prices.label(domain).truecolor(100, 210, 210).to_string();
-            let premium_str = if is_likely_premium(domain) {
-                "  ⚠ likely premium".truecolor(220, 170, 60).to_string()
-            } else {
-                String::new()
-            };
-            format!("  {}  {}{}{}", "✓".bright_green().bold(), padded.bright_white().bold(), price_str, premium_str)
-        }
-        Availability::Protected   => format!("  {}  {}  {}", "★".bright_yellow().bold(), padded.truecolor(60, 60, 80), "reserved / blocked".truecolor(80, 80, 100)),
-        Availability::Unknown     => format!("  {}  {}", "?".bright_yellow(), padded.truecolor(100, 100, 80)),
-        Availability::Taken(dates) => {
-            let mut info = String::new();
-            if let Some(ref d) = dates.registered { info.push_str(&format!("  reg {}", d)); }
-            if let Some(ref d) = dates.updated    { info.push_str(&format!("  upd {}", d)); }
-            let exp_str = dates.expires.as_ref().map(|d| {
-                let label = format!("  exp {}", d);
-                match days_until(d) {
-                    Some(n) if n < 90  => label.truecolor(220, 100, 60).to_string(),
-                    Some(n) if n < 365 => label.truecolor(200, 170, 60).to_string(),
-                    _                  => label.truecolor(110, 100, 150).to_string(),
-                }
-            });
-            let meta = info.truecolor(110, 100, 150).to_string()
-                + exp_str.as_deref().unwrap_or("");
-            if dates.registered.is_none() && dates.updated.is_none() && dates.expires.is_none() {
-                format!("  {}  {}", "✗".truecolor(70, 70, 90), padded.truecolor(60, 60, 80))
-            } else {
-                format!("  {}  {}{}", "✗".truecolor(70, 70, 90), padded.truecolor(60, 60, 80), meta)
-            }
+    let mut result = resolve_sources(rdap_fut, dns_check(&client, &name, tld), whois_handle).await;
+    if matches!(result, Availability::Available) {
+        if let Some(url) = config::dpml_url(&name, tld) {
+            result = protection::check(&client, url, sem.clone()).await;
         }
     }
+    (domain, result)
+}
+
+async fn resolve_sources<R, D>(rdap: R, dns: D, mut whois: WhoisTask) -> Availability
+where R: std::future::Future<Output = Availability>, D: std::future::Future<Output = Availability> {
+    tokio::pin!(rdap, dns);
+    let mut dns_done = None;
+    let rdap_result = tokio::select! {
+        result = &mut rdap => result,
+        result = &mut dns => { dns_done = Some(result); rdap.await }
+    };
+    let dns_result = match dns_done {
+        Some(result) => result,
+        None if matches!(rdap_result, Availability::Taken(_)) => Availability::Unknown(UnknownReason::Inconclusive),
+        None => dns.await,
+    };
+    // A negative RDAP lookup must not discard an already-running positive
+    // WHOIS record. Registered names do not need a DNS delegation to be taken.
+    let whois_result = if matches!(rdap_result, Availability::Unknown(_) | Availability::Available) {
+        (&mut whois.0).await.unwrap_or(Availability::Unknown(UnknownReason::Inconclusive))
+    } else { Availability::Unknown(UnknownReason::Inconclusive) };
+    merge_results(rdap_result, whois_result, dns_result)
 }
 
 fn generate_suggestions(keywords: &[String]) -> Vec<String> {
     let prefixes = ["get", "try", "use", "go", "my", "the", "run", "hey"];
     let suffixes = ["hq", "app", "lab", "hub", "base"];
     let mut names = Vec::new();
-    for kw in keywords {
-        names.push(kw.clone());
-        for p in &prefixes { names.push(format!("{}{}", p, kw)); }
-        for s in &suffixes { names.push(format!("{}{}", kw, s)); }
-    }
+    names.extend(keywords.iter().cloned());
     if keywords.len() >= 2 {
         names.push(keywords.join(""));
         names.push(keywords.join("-"));
+    }
+    // Round-robin across keywords, so later words and combinations get a fair
+    // share of the result budget instead of truncating after the first keyword.
+    for i in 0..prefixes.len().max(suffixes.len()) {
+        for kw in keywords {
+            if let Some(prefix) = prefixes.get(i) { names.push(format!("{prefix}{kw}")); }
+            if let Some(suffix) = suffixes.get(i) { names.push(format!("{kw}{suffix}")); }
+        }
     }
     let mut seen = std::collections::HashSet::new();
     names.into_iter().filter(|name| valid_label(name) && seen.insert(name.clone())).take(14).collect()
@@ -469,17 +529,11 @@ fn print_help() {
     row("name",              "check name across all TLDs");
     row("name.tld",          "check a single domain");
     row("name+",             "suggest prefix/suffix variants");
+    row("name+.tld",         "suggest variants on one TLD");
     row("+",                 "suggest for last searched name");
-    row("/tlds",             "choose extensions for name searches");
     println!();
-    println!("  {}", "watchlist".truecolor(80, 80, 100));
-    row("/watch <domain>",   "get notified when a domain frees up");
-    row("/unwatch <domain>", "stop watching");
-    row("/list",             "show watchlist");
-    println!();
-    println!("  {}", "other".truecolor(80, 80, 100));
-    row("/update",           "update dott using its installation method");
-    row("/help",             "show this help");
+    println!("  {}", "commands · type / to choose".truecolor(150, 150, 170));
+    for command in commands::COMMANDS { row(&command.usage(), command.description); }
     row("exit, q",           "quit (also esc)");
     println!();
 }
@@ -492,223 +546,65 @@ fn print_cat() {
     println!("{}", "  | |_| | (_) | |_| |_".truecolor(80, 130, 255));
     println!("{}", format!("  |____/ \\___/ \\__|\\__|  v{}", env!("CARGO_PKG_VERSION")).truecolor(50, 215, 235));
     println!();
-    println!("{}", "  private domain search..".truecolor(80, 80, 110));
-    println!("{}", "  type a name and hit enter. /help for commands · esc to quit.".truecolor(110, 105, 140));
+    println!("{}", "  private domain search".truecolor(160, 160, 175));
+    println!("{}", ui::clip("  type a name · / for commands · esc to quit", ui::width().saturating_sub(1)).truecolor(155, 155, 175));
     println!();
     println!();
 }
 
-// read a line with raw mode — handles typing, backspace, enter, esc/ctrl-c
-fn read_input(prompt: &str) -> Option<String> {
-    let mut buf = String::new();
-
-    print!("{}", prompt);
-    io::stdout().flush().unwrap();
-
-    if let Err(error) = enable_raw_mode() {
-        eprintln!("dott: Cannot open interactive terminal: {error}");
-        return None;
-    }
-
-    let result = loop {
-        let key = match event::read() {
-            Ok(Event::Key(key)) if key.kind != event::KeyEventKind::Release => key,
-            Ok(_) => continue,
-            Err(error) => { eprintln!("dott: Terminal read failed: {error}"); break None; }
-        };
-        match key.code {
-            KeyCode::Esc => break None,
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break None,
-            KeyCode::Enter => {
-                println!();
-                break Some(buf.clone());
-            }
-            KeyCode::Backspace => {
-                if !buf.is_empty() {
-                    buf.pop();
-                    execute!(io::stdout(), cursor::MoveLeft(1), Clear(ClearType::UntilNewLine)).unwrap();
-                }
-            }
-            KeyCode::Char(c) => {
-                buf.push(c);
-                print!("{}", c);
-                io::stdout().flush().unwrap();
-            }
-            _ => {}
-        }
-    };
-
-    let _ = disable_raw_mode();
-    result
+fn input_prompt() -> String {
+    format!("  {} ", ">".truecolor(64, 194, 207).bold())
 }
 
-// In interactive mode the prompt only returns once results are in; keys pressed meanwhile are
-// swallowed so they can't scramble the rows or leak into the next search.
-async fn search_and_print(client: &Client, name: &str, tld_list: Vec<&'static str>, plain: bool, cache: Option<&Cache>, interactive: bool) {
-    // One permit per TLD so the whole set can fly in parallel — no second-batch wait.
-    let sem = Arc::new(Semaphore::new(tld_list.len().max(1)));
-
-    if plain {
-        let tasks: Vec<_> = tld_list.iter().map(|tld| {
-            check_domain_cached(client.clone(), name.to_string(), tld, sem.clone(), cache.cloned())
-        }).collect();
-        let results = join_all(tasks).await;
-        for (domain, av) in &results {
-            println!("{} {}", domain, av.as_str());
-        }
-        return;
-    }
-
-    // Pin each TLD to a fixed row (tld_rank order, so .com is always on top) and stream
-    // results into their slot as each check completes. Each pending row gets its own
-    // animated spinner; finished rows hold their result.
-    let mut tlds = tld_list;
-    tlds.sort_by_key(|t| tld_rank(t));
-    let n = tlds.len();
-    let pad = tlds.iter().map(|t| name.len() + 1 + t.len()).max().unwrap_or(0);
-
-    const FRAMES: [&str; 10] = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"];
-
-    println!();
-    {
-        let mut out = io::stdout();
-        for tld in &tlds {
-            let domain = format!("{}.{}", name, tld);
-            let padded = format!("{:<width$}", domain, width = pad);
-            let _ = writeln!(
-                out,
-                "  {}  {}",
-                FRAMES[0].truecolor(160, 120, 220),
-                padded.truecolor(80, 80, 100)
-            );
-        }
-        let _ = out.flush();
-    }
-
-    let io_lock = Arc::new(std::sync::Mutex::new(()));
-    let done: Arc<Vec<AtomicBool>> = Arc::new((0..n).map(|_| AtomicBool::new(false)).collect());
-    let spinning = Arc::new(AtomicBool::new(true));
-    let swallowing = interactive && enable_raw_mode().is_ok();
-    let reader = swallowing.then(|| {
-        let spinning = spinning.clone();
-        std::thread::spawn(move || {
-            while spinning.load(Ordering::Relaxed) {
-                if !event::poll(Duration::from_millis(30)).unwrap_or(false) { continue; }
-                if let Ok(Event::Key(key)) = event::read()
-                    && key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-                    let _ = disable_raw_mode();
-                    println!();
-                    std::process::exit(130);
-                }
-            }
-        })
-    });
-
-    // Tick task: every 80ms, repaint each still-pending row with the next spinner frame.
-    // Skips rows that have flipped done[i], so finished rows never flicker.
-    let tick_handle = {
-        let spinning = spinning.clone();
-        let done = done.clone();
-        let io_lock = io_lock.clone();
-        let tlds_t = tlds.clone();
-        let name_t = name.to_string();
-        tokio::spawn(async move {
-            let mut frame = 0usize;
-            while spinning.load(Ordering::Relaxed) {
-                tokio::time::sleep(Duration::from_millis(80)).await;
-                frame = frame.wrapping_add(1);
-                let _g = io_lock.lock().unwrap();
-                let mut out = io::stdout();
-                for (i, d) in done.iter().enumerate() {
-                    if d.load(Ordering::Relaxed) { continue; }
-                    let up = (n - i) as u16;
-                    let domain = format!("{}.{}", name_t, tlds_t[i]);
-                    let padded = format!("{:<width$}", domain, width = pad);
-                    let _ = execute!(
-                        out,
-                        cursor::MoveUp(up),
-                        cursor::MoveToColumn(0),
-                        Clear(ClearType::CurrentLine),
-                    );
-                    let _ = write!(
-                        out,
-                        "  {}  {}",
-                        FRAMES[frame % FRAMES.len()].truecolor(160, 120, 220),
-                        padded.truecolor(80, 80, 100)
-                    );
-                    let _ = execute!(out, cursor::MoveToNextLine(up));
-                }
-                let _ = out.flush();
-            }
-        })
-    };
-
-    let price_client = client.clone();
-    let prices = async move { pricing::load(&price_client).await }.boxed().shared();
-    let task_handles: Vec<_> = tlds.iter().enumerate().map(|(i, tld)| {
-        let tld = *tld;
+// All terminal searches share the same viewport and cancellation behavior.
+async fn check_and_print(client: &Client, domains: Vec<(String, &'static str)>, cache: Option<&Cache>, _interactive: bool, prices: tokio::sync::watch::Receiver<pricing::Catalog>) -> ui::Results {
+    let sem = Arc::new(Semaphore::new(10));
+    let labels = domains.iter().map(|(name, tld)| format!("{name}.{tld}")).collect();
+    let checks: FuturesUnordered<_> = domains.into_iter().enumerate().map(|(i, (name, tld))| {
         let client = client.clone();
-        let name_s = name.to_string();
         let sem = sem.clone();
         let cache = cache.cloned();
-        let io_lock = io_lock.clone();
-        let done = done.clone();
-        let prices = prices.clone();
-        tokio::spawn(async move {
-            let ((domain, av), prices) = tokio::join!(
-                check_domain_cached(client, name_s, tld, sem, cache), prices
-            );
-            let final_line = format_result(&domain, &av, pad, &prices);
-            {
-                let _g = io_lock.lock().unwrap();
-                let mut out = io::stdout();
-                let up = (n - i) as u16;
-                let _ = execute!(
-                    out,
-                    cursor::MoveUp(up),
-                    cursor::MoveToColumn(0),
-                    Clear(ClearType::CurrentLine),
-                );
-                let _ = write!(out, "{}", final_line);
-                let _ = execute!(out, cursor::MoveToNextLine(up));
-                let _ = out.flush();
-                done[i].store(true, Ordering::Relaxed);
-            }
-            (domain, av)
-        })
+        async move { (i, check_domain_cached(client, name, tld, sem, cache).await) }
     }).collect();
-
-    let mut results: Vec<(String, Availability)> = Vec::with_capacity(n);
-    for h in task_handles {
-        if let Ok(r) = h.await { results.push(r); }
+    match ui::live(checks, labels, prices.clone(), io::stdin().is_terminal()).await {
+        Ok((report, mut panel)) => {
+            let changes = match history::record(&report.results) {
+                Ok(changes) => changes,
+                Err(error) => { eprintln!("dott: {error}"); Vec::new() }
+            };
+            if let Err(error) = panel.finish(&report.results, &prices.borrow(), changes, report.cancelled) { eprintln!("dott: {error}"); }
+            report.results
+        }
+        Err(error) => { eprintln!("dott: Cannot render search: {error}"); Vec::new() }
     }
+}
 
-    spinning.store(false, Ordering::Relaxed);
-    let _ = tick_handle.await;
-    if let Some(reader) = reader {
-        let _ = reader.join();
-        let _ = disable_raw_mode();
+async fn search_and_print(client: &Client, name: &str, explicit: Option<&'static str>, mut tld_list: Vec<&'static str>, plain: bool, cache: Option<&Cache>, interactive: bool, prices: Option<tokio::sync::watch::Receiver<pricing::Catalog>>) -> ui::Results {
+    if !plain { tld_list.sort_by_key(|t| tld_rank(t)); }
+    let domains = search_domains(name, explicit, &tld_list);
+    if plain {
+        let sem = Arc::new(Semaphore::new(10));
+        let tasks: Vec<_> = domains.into_iter().map(|(name, tld)| {
+            check_domain_cached(client.clone(), name, tld, sem.clone(), cache.cloned())
+        }).collect();
+        let results = join_all(tasks).await;
+        for (domain, status) in &results { println!("{} {}", domain, status.as_str()); }
+        return results;
     }
+    check_and_print(client, domains, cache, interactive,
+        prices.unwrap_or_else(|| pricing::start(client))).await
+}
 
-    let available_count = results.iter()
-        .filter(|(_, a)| matches!(a, Availability::Available))
-        .count();
+fn retry_domains(results: &ui::Results) -> Vec<(String, &'static str)> {
+    results.iter().filter(|(_, status)| matches!(status, Availability::Unknown(_)))
+        .filter_map(|(domain, _)| parse_search(domain).ok().and_then(|(name, tld)| tld.map(|tld| (name, tld))))
+        .collect()
+}
 
-    println!();
-    println!(
-        "  {} available  ·  {} checked",
-        available_count.to_string().bright_green().bold(),
-        n.to_string().truecolor(80, 80, 100),
-    );
-    println!("{}", "  ─────────────────────────────────────────────────────".truecolor(38, 36, 52));
-    println!(
-        "  {}  {}    {}  {}    {}  {}    {}  {}",
-        "✓".bright_green(),        "available".truecolor(70, 70, 90),
-        "?".bright_yellow(),       "unknown".truecolor(70, 70, 90),
-        "✗".truecolor(70, 70, 90), "taken".truecolor(70, 70, 90),
-        "esc".truecolor(100, 95, 130), "quit".truecolor(70, 70, 90),
-    );
-    println!("{}", "  ─────────────────────────────────────────────────────".truecolor(38, 36, 52));
+fn merge_retry(previous: &mut ui::Results, refreshed: ui::Results) {
+    for (domain, status) in refreshed {
+        if let Some((_, old)) = previous.iter_mut().find(|(d, _)| *d == domain) { *old = status; }
+    }
 }
 
 async fn print_update(handle: tokio::task::JoinHandle<Option<String>>) {
@@ -1121,7 +1017,7 @@ async fn main() {
                 Err(error) => { eprintln!("dott: {error}"); std::process::exit(1); }
             };
             let tlds = search_tlds(explicit_tld, selected_tlds.as_deref());
-            search_and_print(&client, &name, tlds, true, None, false).await;
+            search_and_print(&client, &name, explicit_tld, tlds, true, None, false, None).await;
         }
         return;
     }
@@ -1150,28 +1046,13 @@ async fn main() {
         }
         let suggestions = generate_suggestions(&keywords);
         let tlds = active_tlds.clone().unwrap_or_else(|| vec!["com", "io", "dev", "app", "co"]);
-        let sem = Arc::new(Semaphore::new(10));
-        let tasks: Vec<_> = suggestions.iter().flat_map(|name| {
-            let name = name.clone(); let client = client.clone(); let sem = sem.clone();
-            tlds.iter().map(move |tld| check_domain(client.clone(), name.clone(), tld, sem.clone()))
-        }).collect();
-        let (results, prices) = tokio::join!(join_all(tasks), async {
-            if plain { None } else { Some(pricing::load(&client).await) }
-        });
-        let available: Vec<&str> = results.iter()
-            .filter(|(_, a)| matches!(a, Availability::Available))
-            .map(|(d, _)| d.as_str()).collect();
+        let domains: Vec<_> = suggestions.iter().flat_map(|name| tlds.iter().map(move |tld| (name.clone(), *tld))).collect();
         if plain {
-            for (domain, av) in &results {
-                println!("{} {}", domain, av.as_str());
-            }
-        } else if available.is_empty() {
-            println!("  {} nothing available\n", "✗".truecolor(80, 80, 100));
+            let sem = Arc::new(Semaphore::new(10));
+            let tasks = domains.into_iter().map(|(name, tld)| check_domain(client.clone(), name, tld, sem.clone()));
+            for (domain, status) in join_all(tasks).await { println!("{} {}", domain, status.as_str()); }
         } else {
-            let prices = prices.as_ref().expect("Terminal output has a pricing catalog");
-            let pad = available.iter().map(|d| d.len()).max().unwrap_or(0);
-            for d in &available { println!("{}", format_result(d, &Availability::Available, pad, prices)); }
-            println!("\n  {} available\n", available.len().to_string().bright_green().bold());
+            check_and_print(&client, domains, None, false, pricing::start(&client)).await;
         }
         if let Some(h) = update_check.take() { print_update(h).await; }
         return;
@@ -1188,7 +1069,7 @@ async fn main() {
             Err(error) => { eprintln!("dott: {error}"); std::process::exit(1); }
         };
         let tld_list = search_tlds(explicit_tld, active_tlds.as_deref());
-        search_and_print(&client, &name, tld_list, plain, None, false).await;
+        search_and_print(&client, &name, explicit_tld, tld_list, plain, None, false, None).await;
         if let Some(h) = update_check.take() { print_update(h).await; }
         return;
     }
@@ -1198,19 +1079,21 @@ async fn main() {
     show_notices();
     std::thread::spawn(|| prepare_notifier(true));
     warm_up(&client, active_tlds.as_deref().unwrap_or(ALL_TLDS));
-    tokio::spawn({
-        let client = client.clone();
-        async move { pricing::load(&client).await; }
-    });
+    let session_prices = pricing::start(&client);
 
     let cache = new_cache();
     let mut last_name: Option<String> = None;
+    let mut last_results: ui::Results = Vec::new();
+    let mut history = Vec::new();
 
     loop {
-        // three chevrons in the logo's first colors, orange → pink → purple
-        let prompt = format!("  {}{}{} ", "❯".truecolor(255, 155, 0).bold(), "❯".truecolor(255, 60, 90).bold(),
-            "❯".truecolor(180, 50, 230).bold());
-        match read_input(&prompt) {
+        let prompt = input_prompt();
+        let input = match ui::read_input(&prompt, &mut history) {
+            Ok(input) => input,
+            Err(error) => { eprintln!("dott: Cannot read input: {error}"); break; }
+        };
+        if input.as_ref().is_some_and(|input| input.trim().is_empty()) { continue; }
+        match input {
             None => {
                 println!("\n  {}\n", farewell().truecolor(180, 140, 200));
                 if let Some(h) = update_check.take() { print_update(h).await; }
@@ -1225,51 +1108,71 @@ async fn main() {
                     break;
                 }
 
-                // 'name+' → suggest ; bare '+' reuses the last searched name
-                if let Some(raw) = input.strip_suffix('+') {
-                    let name = if raw.is_empty() {
-                        match last_name.clone() {
-                            Some(n) => n,
-                            None => {
-                                println!("  {}\n", "search for a name first".truecolor(100, 100, 120));
-                                continue;
-                            }
-                        }
-                    } else {
-                        match parse_search(raw) {
-                            Ok((name, _)) => name,
-                            Err(error) => { eprintln!("dott: {error}"); continue; }
-                        }
+                if let Some(command) = commands::COMMANDS.iter().find(|command| command.name == input && command.argument.is_some()) {
+                    eprintln!("dott: Usage: {}", command.usage());
+                    continue;
+                }
+
+                if let Some(parsed) = parse_suggest(&input) {
+                    let (name, explicit_tld) = match parsed {
+                        Ok(suggest) => suggest,
+                        Err(error) => { eprintln!("dott: {error}"); continue; }
+                    };
+                    let Some(name) = name.or_else(|| last_name.clone()) else {
+                        println!("  {}\n", "search for a name first".truecolor(100, 100, 120));
+                        continue;
                     };
                     println!("  {} {}", "suggesting for:".truecolor(80, 80, 100), name.bright_white());
                     // the name itself was just searched; only show new variants
                     let suggestions: Vec<String> = generate_suggestions(std::slice::from_ref(&name)).into_iter().filter(|n| *n != name).collect();
-                    let tlds = active_tlds.clone().unwrap_or_else(|| vec!["com", "io", "dev", "app", "co"]);
-                    let sem = Arc::new(Semaphore::new(10));
-                    let tasks: Vec<_> = suggestions.iter().flat_map(|n| {
-                        let n = n.clone();
-                        let client = client.clone();
-                        let sem = sem.clone();
-                        let cache = cache.clone();
-                        tlds.iter().map(move |tld| check_domain_cached(client.clone(), n.clone(), tld, sem.clone(), Some(cache.clone())))
-                    }).collect();
-                    let (results, prices) = tokio::join!(join_all(tasks), pricing::load(&client));
-                    let available: Vec<&str> = results.iter()
-                        .filter(|(_, a)| matches!(a, Availability::Available))
-                        .map(|(d, _)| d.as_str())
-                        .collect();
-                    println!();
-                    if available.is_empty() {
-                        println!("  {}  nothing available\n", "✗".truecolor(80, 80, 100));
-                    } else {
-                        let pad = available.iter().map(|d| d.len()).max().unwrap_or(0);
-                        for d in &available {
-                            println!("{}", format_result(d, &Availability::Available, pad, &prices));
-                        }
-                        println!();
-                        println!("  {} available\n", available.len().to_string().bright_green().bold());
-                    }
+                    let tlds = match explicit_tld {
+                        Some(tld) => vec![tld],
+                        None => active_tlds.clone().unwrap_or_else(|| vec!["com", "io", "dev", "app", "co"]),
+                    };
+                    let domains = suggestions.iter().flat_map(|name| tlds.iter().map(move |tld| (name.clone(), *tld))).collect();
+                    last_results = check_and_print(&client, domains, Some(&cache), true, session_prices.clone()).await;
                     try_print_update_if_ready(&mut update_check).await;
+                    continue;
+                }
+
+                if input == "/results" || input == "/shortlist" || input.starts_with("/details ") {
+                    if input == "/shortlist" {
+                        match shortlist::load() {
+                            Ok(saved) => {
+                                if saved.is_empty() { println!("  Your shortlist is empty. Use /save <domain> to add a name.\n"); continue; }
+                                last_results = saved.into_iter().map(|domain| {
+                                    let status = last_results.iter().find(|(d, _)| *d == domain).map(|(_, s)| s.clone()).unwrap_or(Availability::Unknown(UnknownReason::NotChecked));
+                                    (domain, status)
+                                }).collect();
+                            }
+                            Err(error) => { eprintln!("dott: {error}"); continue; }
+                        }
+                    }
+                    if last_results.is_empty() { println!("  Search for a name first.\n"); continue; }
+                    if let Some(domain) = input.strip_prefix("/details ") {
+                        if let Some((domain, status)) = last_results.iter().find(|(d, _)| d == domain.trim()) {
+                            for line in ui::details(domain, status, &session_prices.borrow()) { println!("  {line}"); }
+                        } else { eprintln!("dott: That domain is not in the last results."); }
+                    } else if let Err(error) = ui::print_results(&last_results, &session_prices.borrow(), &[], false) { eprintln!("dott: {error}"); }
+                    continue;
+                }
+                if input == "/retry" {
+                    let domains = retry_domains(&last_results);
+                    if domains.is_empty() { println!("  No inconclusive checks to retry.\n"); continue; }
+                    if let Ok(mut entries) = cache.lock() {
+                        for key in &domains { entries.remove(key); }
+                    }
+                    let refreshed = check_and_print(&client, domains, Some(&cache), true, session_prices.clone()).await;
+                    merge_retry(&mut last_results, refreshed);
+                    continue;
+                }
+                if let Some((save, raw)) = input.strip_prefix("/save ").map(|d| (true, d))
+                    .or_else(|| input.strip_prefix("/unsave ").map(|d| (false, d))) {
+                    let domain = parse_search(raw).and_then(|(name, tld)| tld.map(|tld| format!("{name}.{tld}")).ok_or_else(|| "Use a full domain.".into()));
+                    match domain.and_then(|domain| shortlist::set(&domain, save).map(|_| domain)) {
+                        Ok(domain) => println!("  {} {domain}\n", if save { "Saved" } else { "Removed" }),
+                        Err(error) => eprintln!("dott: {error}"),
+                    }
                     continue;
                 }
 
@@ -1311,15 +1214,18 @@ async fn main() {
                     continue;
                 }
 
+                if input.starts_with('/') {
+                    eprintln!("dott: Unknown command. Type / to see the options.");
+                    continue;
+                }
+
                 let (name, explicit_tld) = match parse_search(&input) {
                     Ok(search) => search,
                     Err(error) => { eprintln!("dott: {error}"); continue; }
                 };
                 let tlds = search_tlds(explicit_tld, active_tlds.as_deref());
-                search_and_print(&client, &name, tlds, false, Some(&cache), true).await;
+                last_results = search_and_print(&client, &name, explicit_tld, tlds, false, Some(&cache), true, Some(session_prices.clone())).await;
                 last_name = Some(name);
-
-                println!();
                 try_print_update_if_ready(&mut update_check).await;
             }
         }
@@ -1336,6 +1242,91 @@ fn finish_command(result: Result<(), String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use config::is_likely_premium;
+
+    #[test]
+    fn exact_suffix_matches_lead_regardless_of_selected_extensions() {
+        assert_eq!(search_domains("phagy", None, &["com", "dev"]),
+            vec![("pha".into(), "gy"), ("phagy".into(), "com"), ("phagy".into(), "dev")]);
+        assert_eq!(search_domains("phagy", None, &["gy", "com", "gy"]),
+            vec![("pha".into(), "gy"), ("phagy".into(), "gy"), ("phagy".into(), "com")]);
+        for (query, label, suffix) in [("radio", "rad", "io"), ("family", "fami", "ly"),
+            ("getapp", "get", "app"), ("gocomputer", "go", "computer")] {
+            assert_eq!(search_domains(query, None, &["com"])[0], (label.into(), suffix));
+        }
+    }
+
+    #[test]
+    fn suffix_matching_requires_a_valid_label_and_keeps_explicit_searches_exact() {
+        for query in ["gy", "-gy", "a-gy", "hello"] {
+            assert_eq!(search_domains(query, None, &["com"]), vec![(query.into(), "com")]);
+        }
+        assert_eq!(search_domains("phagy", Some("com"), &["com"]), vec![("phagy".into(), "com")]);
+        assert_eq!(search_domains("pha", Some("gy"), &["com"]), vec![("pha".into(), "gy")]);
+        let (name, explicit) = parse_search(" PHAGY ").unwrap();
+        assert_eq!(search_domains(&name, explicit, &["com"])[0], ("pha".into(), "gy"));
+    }
+
+    #[tokio::test]
+    async fn suffix_matches_use_the_normal_cached_plain_search_path() {
+        let cache = new_cache();
+        for (name, tld, status) in [("pha", "gy", Availability::Available),
+            ("phagy", "com", Availability::Taken(DomainDates::default()))] {
+            cache.lock().unwrap().insert((name.into(), tld), (std::time::Instant::now(), status));
+        }
+        let results = search_and_print(&Client::new(), "phagy", None, vec!["com"], true, Some(&cache), false, None).await;
+        assert_eq!(results.iter().map(|(d, s)| (d.as_str(), s.as_str())).collect::<Vec<_>>(),
+            vec![("pha.gy", "available"), ("phagy.com", "taken")]);
+    }
+
+    #[tokio::test]
+    async fn suffix_match_stays_first_when_regular_result_finishes_first() {
+        use futures::FutureExt;
+        let domains = search_domains("phagy", None, &["com"]);
+        let labels: Vec<_> = domains.iter().map(|(name, tld)| format!("{name}.{tld}")).collect();
+        let (url, _, server) = one_response("127.0.0.1", "404 Not Found", r#"{"errorCode":404,"title":"Not Found"}"#);
+        let url = url.replace("nic.co", "pha.gy");
+        let (send, receive) = tokio::sync::oneshot::channel();
+        let checks = FuturesUnordered::new();
+        checks.push(async move {
+            receive.await.unwrap();
+            let status = http_query(&Client::builder().no_proxy().build().unwrap(), &url, &Semaphore::new(1)).await.unwrap();
+            (0, ("pha.gy".into(), status))
+        }.boxed());
+        checks.push(async move {
+            send.send(()).unwrap();
+            (1, ("phagy.com".into(), Availability::Taken(DomainDates::default())))
+        }.boxed());
+        let (_, prices) = tokio::sync::watch::channel(pricing::fixture_catalog(false));
+        let report = ui::drive(checks, labels, prices, |rows, _| {
+            assert_eq!(rows.len(), 2);
+            Ok(false)
+        }).await.unwrap();
+        server.join().unwrap();
+        assert_eq!(report.results.iter().map(|(d, s)| (d.as_str(), s.as_str())).collect::<Vec<_>>(),
+            vec![("pha.gy", "available"), ("phagy.com", "taken")]);
+    }
+
+    #[test]
+    fn suggestions_include_later_keywords_and_combinations_within_budget() {
+        let names = generate_suggestions(&["cool".into(), "project".into()]);
+        for name in ["cool", "project", "coolproject", "cool-project", "getcool", "getproject", "coolhq", "projecthq"] {
+            assert!(names.iter().any(|n| n == name), "missing {name}: {names:?}");
+        }
+        assert_eq!(names.len(), 14);
+        assert_eq!(generate_suggestions(&["cool".into()]).len(), 14);
+        let names = generate_suggestions(&["cool".into(), "cool".into(), "x".repeat(63)]);
+        assert_eq!(names.iter().collect::<std::collections::HashSet<_>>().len(), names.len());
+        assert!(names.iter().all(|n| valid_label(n)));
+    }
+
+    #[test]
+    fn retry_targets_only_unknown_and_preserves_other_results() {
+        let mut results = vec![("example.com".into(), Availability::Available), ("example.gg".into(), Availability::Unknown(UnknownReason::Inconclusive)), ("example.io".into(), Availability::Protected(ProtectionReason::Reserved))];
+        assert_eq!(retry_domains(&results), vec![("example".into(), "gg")]);
+        merge_retry(&mut results, vec![("example.gg".into(), Availability::Taken(DomainDates::default()))]);
+        assert_eq!(results.iter().map(|(_, s)| s.as_str()).collect::<Vec<_>>(), vec!["available", "taken", "protected"]);
+    }
 
     // Mock servers give up after 10s instead of waiting forever for a client that never connects.
     fn accept(listener: &std::net::TcpListener) -> std::net::TcpStream {
@@ -1355,6 +1346,14 @@ mod tests {
     fn full_domains_and_tld_lists_are_normalized_and_validated() {
         assert_eq!(parse_search(" MyName.IO ").unwrap(), ("myname".into(), Some("io")));
         assert_eq!(parse_search("MyName").unwrap(), ("myname".into(), None));
+        assert_eq!(parse_suggest("yoyo+").unwrap().unwrap(), (Some("yoyo".into()), None));
+        assert_eq!(parse_suggest("yoyo+.com").unwrap().unwrap(), (Some("yoyo".into()), Some("com")));
+        assert_eq!(parse_suggest("yoyo.com+").unwrap().unwrap(), (Some("yoyo".into()), Some("com")));
+        assert_eq!(parse_suggest("+").unwrap().unwrap(), (None, None));
+        assert_eq!(parse_suggest("+.io").unwrap().unwrap(), (None, Some("io")));
+        assert!(parse_suggest("yoyo+.nope").unwrap().is_err());
+        assert!(parse_suggest("yo+yo").is_none());
+        assert!(parse_suggest("yoyo").is_none());
         assert_eq!(parse_tlds("COM, io,com").unwrap(), vec!["com", "io"]);
         assert!(parse_tlds("com,no-such-tld").is_err());
         assert!(parse_tlds("").is_err());
@@ -1477,8 +1476,8 @@ Registrar URL: https://brsmedia.fm"#, true),
     #[test]
     fn whois_text_mentioning_domain_mid_line_is_not_a_record() {
         let limited = "Query rate exceeded for domain: example.io. Try again later.";
-        assert!(matches!(parse_whois(limited, "io"), Availability::Unknown));
-        assert!(matches!(parse_whois("WHOIS LIMIT EXCEEDED - SEE WWW.PIR.ORG/WHOIS FOR DETAILS", "org"), Availability::Unknown));
+        assert!(matches!(parse_whois(limited, "io"), Availability::Unknown(_)));
+        assert!(matches!(parse_whois("WHOIS LIMIT EXCEEDED - SEE WWW.PIR.ORG/WHOIS FOR DETAILS", "org"), Availability::Unknown(_)));
     }
 
     // Serves one HTTP response to whatever connects, returning the client-facing URL.
@@ -1498,6 +1497,111 @@ Registrar URL: https://brsmedia.fm"#, true),
     }
 
     #[tokio::test]
+    async fn rdap_failure_reasons_stay_unknown_without_bootstrap_retries() {
+        let client = Client::builder().no_proxy().build().unwrap();
+        for (status, body, expected) in [
+            ("429 Too Many Requests", "not found", UnknownReason::RateLimited),
+            ("503 Unavailable", "outage", UnknownReason::ServiceUnavailable),
+            ("504 Gateway Timeout", "timeout", UnknownReason::Timeout),
+            ("200 OK", "{}", UnknownReason::InvalidResponse),
+            ("404 Not Found", "<html>blocked</html>", UnknownReason::InvalidResponse),
+        ] {
+            let (url, _, server) = one_response("127.0.0.1", status, body);
+            let fallback = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            fallback.set_nonblocking(true).unwrap();
+            let fallback_url = format!("http://{}/fallback", fallback.local_addr().unwrap());
+            let result = tokio::time::timeout(Duration::from_secs(2), rdap_check(&client, &url, &fallback_url, &Semaphore::new(1))).await.unwrap();
+            server.join().unwrap();
+            assert!(matches!(result, Availability::Unknown(reason) if reason == expected));
+            assert_eq!(result.as_str(), "unknown");
+            assert_eq!(fallback.accept().unwrap_err().kind(), io::ErrorKind::WouldBlock);
+        }
+    }
+
+    #[tokio::test]
+    async fn rdap_transport_failure_uses_fallback_and_keeps_its_reason() {
+        let client = Client::builder().no_proxy().build().unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let unreachable = format!("http://{}/domain/example.com", listener.local_addr().unwrap());
+        drop(listener);
+        for (status, body, expected) in [
+            ("404 Not Found", r#"{"errorCode":404}"#, "available"),
+            ("429 Too Many Requests", "limited", "unknown"),
+        ] {
+            let (fallback, _, server) = one_response("127.0.0.1", status, body);
+            let result = rdap_check(&client, &unreachable, &fallback, &Semaphore::new(1)).await;
+            server.join().unwrap();
+            assert_eq!(result.as_str(), expected);
+            if expected == "unknown" { assert!(matches!(result, Availability::Unknown(UnknownReason::RateLimited))); }
+        }
+    }
+
+    // Release the reply only after the client has timed out; no sleep races or
+    // external registry services are needed to exercise interrupted responses.
+    fn held_response(prefix: &'static [u8]) -> (std::net::SocketAddr, std::sync::mpsc::Sender<()>, std::thread::JoinHandle<()>) {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (release, held) = std::sync::mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let mut stream = accept(&listener);
+            stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+            let mut request = [0; 4096];
+            stream.read(&mut request).unwrap();
+            stream.write_all(prefix).unwrap();
+            held.recv_timeout(Duration::from_secs(5)).unwrap();
+        });
+        (addr, release, server)
+    }
+
+    #[tokio::test]
+    async fn interrupted_registry_replies_keep_timeout_reasons() {
+        let client = Client::builder().no_proxy().build().unwrap();
+        let (addr, release, server) = held_response(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{}");
+        let url = format!("http://{addr}/domain/example.com");
+        let result = http_query_with_timeout(&client, &url, &Semaphore::new(1), Duration::from_millis(200)).await;
+        release.send(()).unwrap();
+        server.join().unwrap();
+        assert!(matches!(result, Ok(Availability::Unknown(UnknownReason::Timeout))));
+
+        // A partial WHOIS not-found reply is not proof of availability.
+        let (addr, release, server) = held_response(b"No match for example.com\r\n");
+        let result = whois_query(&addr.to_string(), "example.com", "com", false,
+            Duration::from_secs(1), Duration::from_millis(200)).await;
+        release.send(()).unwrap();
+        server.join().unwrap();
+        assert!(matches!(result, Availability::Unknown(UnknownReason::Timeout)));
+    }
+
+    #[test]
+    fn registry_reasons_survive_merging_without_overriding_known_statuses() {
+        for reason in [UnknownReason::Timeout, UnknownReason::RateLimited, UnknownReason::InvalidResponse,
+            UnknownReason::Unreachable, UnknownReason::ServiceUnavailable, UnknownReason::NoRegistryService] {
+            let unknown = || Availability::Unknown(reason);
+            let dns = || Availability::Unknown(UnknownReason::Inconclusive);
+            let result = merge_results(unknown(), dns(), dns());
+            assert!(matches!(result, Availability::Unknown(r) if r == reason));
+            assert!(matches!(merge_results(unknown(), Availability::Available, dns()), Availability::Available));
+            assert!(matches!(merge_results(Availability::Available, unknown(), dns()), Availability::Available));
+            assert!(matches!(merge_results(unknown(), unknown(), Availability::Taken(DomainDates::default())), Availability::Taken(_)));
+        }
+        let result = merge_results(Availability::Unknown(UnknownReason::InvalidResponse),
+            Availability::Unknown(UnknownReason::RateLimited), Availability::Unknown(UnknownReason::Inconclusive));
+        assert!(matches!(result, Availability::Unknown(UnknownReason::RateLimited)));
+    }
+
+    #[test]
+    fn whois_errors_have_reasons_without_matching_rate_policy_footers() {
+        for response in ["Query rate exceeded for domain: example.io. Try again later.", "WHOIS LIMIT EXCEEDED", "% Too many queries", "Error: rate limit exceeded"] {
+            assert!(matches!(parse_whois(response, "io"), Availability::Unknown(UnknownReason::RateLimited)));
+        }
+        assert!(matches!(parse_whois("WHOIS service not available", "com"), Availability::Unknown(UnknownReason::ServiceUnavailable)));
+        assert!(matches!(parse_whois("", "com"), Availability::Unknown(UnknownReason::InvalidResponse)));
+        assert!(matches!(parse_whois("No match for example.com\nTerms: rate limits may apply", "com"), Availability::Available));
+        assert!(matches!(parse_whois("Domain Name: example.com\nTerms: rate limits may apply", "com"), Availability::Taken(_)));
+    }
+
+    #[tokio::test]
     async fn rdap_org_no_service_404_is_not_availability() {
         // rdap.org's real reply for TLDs it can't route (seen for .co, .so, .gg, .sh, .io).
         let no_service = r#"{"rdapConformance":["rdap_level_0"],"lang":"en","errorCode":404,"title":"No RDAP service is available for this resource"}"#;
@@ -1505,13 +1609,13 @@ Registrar URL: https://brsmedia.fm"#, true),
         let client = Client::builder().no_proxy().resolve("rdap.org", addr).build().unwrap();
         let result = http_query(&client, &url, &Semaphore::new(1)).await;
         server.join().unwrap();
-        assert!(matches!(result, Some(Availability::Unknown)), "got {:?}", result.map(|r| r.as_str()));
+        assert!(matches!(result, Ok(Availability::Unknown(_))), "got {:?}", result.map(|r| r.as_str()));
 
         // The same 404 from a registry's own server does mean the name is free.
         let (url, _, server) = one_response("127.0.0.1", "404 Not Found", r#"{"errorCode":404,"title":"Not Found"}"#);
         let result = http_query(&Client::builder().no_proxy().build().unwrap(), &url, &Semaphore::new(1)).await;
         server.join().unwrap();
-        assert!(matches!(result, Some(Availability::Available)));
+        assert!(matches!(result, Ok(Availability::Available)));
     }
 
     #[test]
@@ -1523,9 +1627,9 @@ Registrar URL: https://brsmedia.fm"#, true),
 
     #[test]
     fn whois_boilerplate_does_not_mean_available_or_reserved() {
-        assert!(matches!(parse_whois("WHOIS service not available", "com"), Availability::Unknown));
+        assert!(matches!(parse_whois("WHOIS service not available", "com"), Availability::Unknown(_)));
         assert!(matches!(parse_whois("No match for example.com\nAll rights reserved", "com"), Availability::Available));
-        assert!(matches!(parse_whois("Status: reserved", "com"), Availability::Protected));
+        assert!(matches!(parse_whois("Status: reserved", "com"), Availability::Protected(_)));
         assert!(matches!(parse_whois("Domain Name: EXAMPLE.COM\nNames may be available", "com"), Availability::Taken(_)));
         let so_missing = "Domain Name: zqxdott21.so\nThe queried object does not exist: No Object Found\n";
         assert!(matches!(parse_whois(so_missing, "so"), Availability::Available));
@@ -1540,9 +1644,81 @@ Registrar URL: https://brsmedia.fm"#, true),
     }
 
     #[test]
+    fn si_click_and_fun_use_their_registry_endpoints_and_selection() {
+        for (tld, endpoint, whois) in [
+            ("si", "https://rdap.register.si/domain/example.si", "whois.register.si"),
+            ("click", "https://rdap.registry.click/rdap/domain/example.click", "whois.registry.click"),
+            ("fun", "https://rdap.radix.host/rdap/domain/example.fun", "whois.nic.fun"),
+        ] {
+            assert_eq!(parse_search(&format!("Example.{}", tld.to_uppercase())).unwrap(), ("example".into(), Some(tld)));
+            assert_eq!(parse_suggest(&format!("example+.{tld}")).unwrap().unwrap(), (Some("example".into()), Some(tld)));
+            assert_eq!(rdap_url("example", tld).as_deref(), Some(endpoint));
+            assert_eq!(whois_server(tld), Some(whois));
+            assert!(tld_rank(&format!("example.{tld}")) < 99);
+        }
+        assert_eq!(parse_tlds("SI,click,fun,si").unwrap(), vec!["si", "click", "fun"]);
+        let ranks: std::collections::HashSet<_> = ALL_TLDS.iter().map(|tld| tld_rank(tld)).collect();
+        assert_eq!(ranks.len(), ALL_TLDS.len());
+    }
+
+    #[tokio::test]
+    async fn new_registry_paths_classify_local_rdap_replies() {
+        use std::io::{Read, Write};
+        for tld in ALL_TLDS.iter().copied().filter(|tld| rdap_url("example", tld).is_some()) {
+            for (status, body, expected) in [
+                ("200 OK", r#"{"objectClassName":"domain","ldhName":"PLACEHOLDER","events":[{"eventAction":"expiration","eventDate":"2027-10-28"}]}"#, "taken"),
+                ("404 Not Found", r#"{"errorCode":404,"title":"Not Found"}"#, "available"),
+                ("200 OK", "{}", "unknown"),
+            ] {
+                let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+                let addr = listener.local_addr().unwrap();
+                let mut url = reqwest::Url::parse(&rdap_url("example", tld).unwrap()).unwrap();
+                let host = url.host_str().unwrap().to_owned();
+                let expected_path = url.path().to_owned();
+                url.set_scheme("http").unwrap();
+                url.set_port(Some(addr.port())).unwrap();
+                let body = body.replace("PLACEHOLDER", &format!("example.{tld}"));
+                let server = std::thread::spawn(move || {
+                    let mut stream = accept(&listener);
+                    stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+                    let mut request = [0; 4096];
+                    let size = stream.read(&mut request).unwrap();
+                    assert!(std::str::from_utf8(&request[..size]).unwrap().starts_with(&format!("GET {expected_path} HTTP/1.1\r\n")));
+                    write!(stream, "HTTP/1.1 {status}\r\nContent-Type: application/rdap+json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+                });
+                let client = Client::builder().no_proxy().resolve(&host, addr).build().unwrap();
+                let result = http_query(&client, url.as_str(), &Semaphore::new(1)).await.unwrap();
+                server.join().unwrap();
+                assert_eq!(result.as_str(), expected, "{tld}: {status}");
+                if let Availability::Taken(dates) = result { assert_eq!(dates.expires.as_deref(), Some("2027-10-28")); }
+            }
+        }
+    }
+
+    #[test]
+    fn new_whois_formats_are_recognized_without_matching_boilerplate() {
+        let si_record = "domain:\t\tregistry.si\nstatus:\t\tserver_delete_prohibited\ncreated:\t2008-10-28\nexpire:\t\t2027-10-28\n";
+        match parse_whois(si_record, "si") {
+            Availability::Taken(dates) => {
+                assert_eq!(dates.registered.as_deref(), Some("2008-10-28"));
+                assert_eq!(dates.expires.as_deref(), Some("2027-10-28"));
+            }
+            _ => panic!("expected a registered .si record"),
+        }
+        assert!(matches!(parse_whois("% No entries found for the selected source(s).", "si"), Availability::Available));
+        for tld in ["click", "fun"] {
+            assert!(matches!(parse_whois(&format!(">>> Domain example.{tld} is available for registration\n\n>>> Please visit the registry for registrars"), tld), Availability::Available));
+            assert!(matches!(parse_whois(&format!("Domain Name: nic.{tld}\nCreation Date: 2016-10-25T11:48:07.000Z"), tld), Availability::Taken(_)));
+            for body in ["Domains may be available for registration", ">>> Domain example.com is available for registration", ">>> Domain invalid/name.fun is available for registration"] {
+                assert!(matches!(parse_whois(body, tld), Availability::Unknown(_)), "{tld}: {body}");
+            }
+        }
+    }
+
+    #[test]
     fn watch_notifications_retry_failures_and_ignore_inconclusive_results() {
         let mut entry = WatchEntry { domain: "example.com".into(), last_status: "taken".into() };
-        assert!(!refresh_watch_entry(&mut entry, &Availability::Unknown, |_, _| panic!("unknown must not notify")).unwrap());
+        assert!(!refresh_watch_entry(&mut entry, &Availability::Unknown(UnknownReason::Inconclusive), |_, _| panic!("unknown must not notify")).unwrap());
         assert_eq!(entry.last_status, "taken");
         assert!(!refresh_watch_entry(&mut entry, &Availability::Taken(DomainDates::default()), |_, _| panic!("unchanged must not notify")).unwrap());
         assert!(refresh_watch_entry(&mut entry, &Availability::Available, |_, _| Err("osascript failed".into())).is_err());
@@ -1553,9 +1729,9 @@ Registrar URL: https://brsmedia.fm"#, true),
             Ok(())
         }).unwrap());
         assert_eq!(entry.last_status, "available");
-        assert!(!refresh_watch_entry(&mut entry, &Availability::Unknown, |_, _| panic!("outage must not notify")).unwrap());
+        assert!(!refresh_watch_entry(&mut entry, &Availability::Unknown(UnknownReason::Inconclusive), |_, _| panic!("outage must not notify")).unwrap());
         assert!(!refresh_watch_entry(&mut entry, &Availability::Available, |_, _| panic!("must not notify twice")).unwrap());
-        assert!(refresh_watch_entry(&mut entry, &Availability::Protected, |_, _| panic!("protected must not notify")).unwrap());
+        assert!(refresh_watch_entry(&mut entry, &Availability::Protected(ProtectionReason::Reserved), |_, _| panic!("protected must not notify")).unwrap());
         assert_eq!(entry.last_status, "protected");
     }
 
@@ -1592,7 +1768,7 @@ Registrar URL: https://brsmedia.fm"#, true),
         });
         let result = http_query(&Client::builder().no_proxy().build().unwrap(), &url, &Semaphore::new(1)).await;
         server.join().unwrap();
-        assert!(matches!(result, Some(Availability::Unknown)), "a response must not trigger the rdap.org retry");
+        assert!(matches!(result, Ok(Availability::Unknown(_))), "a response must not trigger the rdap.org retry");
     }
 
     #[tokio::test]
@@ -1601,7 +1777,7 @@ Registrar URL: https://brsmedia.fm"#, true),
         let url = format!("http://{}/domain/example.com", listener.local_addr().unwrap());
         drop(listener);
         let result = http_query(&Client::builder().no_proxy().build().unwrap(), &url, &Semaphore::new(1)).await;
-        assert!(result.is_none());
+        assert_eq!(result.unwrap_err(), UnknownReason::Unreachable);
     }
 
     #[test]
@@ -1633,8 +1809,8 @@ Registrar URL: https://brsmedia.fm"#, true),
     #[test]
     fn dns_taken_overrides_all_unknown() {
         let out = merge_results(
-            Availability::Unknown,
-            Availability::Unknown,
+            Availability::Unknown(UnknownReason::Inconclusive),
+            Availability::Unknown(UnknownReason::Inconclusive),
             Availability::Taken(DomainDates::default()),
         );
         assert!(matches!(out, Availability::Taken(_)));
@@ -1643,7 +1819,7 @@ Registrar URL: https://brsmedia.fm"#, true),
     #[test]
     fn dns_taken_keeps_whois_expiry() {
         let out = merge_results(
-            Availability::Unknown,
+            Availability::Unknown(UnknownReason::Inconclusive),
             Availability::Taken(dates_with_expiry("2027-01-01")),
             Availability::Taken(DomainDates::default()),
         );
@@ -1668,7 +1844,7 @@ Registrar URL: https://brsmedia.fm"#, true),
         let out = merge_results(
             Availability::Taken(rdap),
             Availability::Taken(whois),
-            Availability::Unknown,
+            Availability::Unknown(UnknownReason::Inconclusive),
         );
         match out {
             Availability::Taken(d) => {
@@ -1685,17 +1861,20 @@ Registrar URL: https://brsmedia.fm"#, true),
         assert_eq!(warm_origins(&["com", "net"]), vec!["https://cloudflare-dns.com/", "https://rdap.verisign.com/"]);
         assert_eq!(warm_origins(&["sh", "gg"]), vec!["https://cloudflare-dns.com/"], "WHOIS-only extensions");
         let all = warm_origins(ALL_TLDS);
-        assert!(all.iter().all(|o| o.ends_with(".com/") || o.ends_with(".org/") || o.ends_with(".services/")
-            || o.ends_with(".google/") || o.ends_with(".cv/") || o.ends_with(".uk/") || o.ends_with(".so/")), "{all:?}");
-        assert!(all.iter().all(|o| !o.contains("domain")));
+        assert!(all.contains(&"https://rdap.registry.gy/".to_string()));
+        for origin in all {
+            let url = reqwest::Url::parse(&origin).unwrap();
+            assert_eq!(url.path(), "/", "warm-up must not include a domain query");
+            assert!(url.query().is_none() && url.fragment().is_none());
+        }
     }
 
     #[test]
     fn rdap_taken_does_not_depend_on_dns() {
         // check_domain skips waiting for DNS once RDAP says taken; the merge must agree.
         let rdap = || Availability::Taken(dates_with_expiry("2027-01-01"));
-        for dns in [Availability::Taken(DomainDates::default()), Availability::Unknown] {
-            match merge_results(rdap(), Availability::Unknown, dns) {
+        for dns in [Availability::Taken(DomainDates::default()), Availability::Unknown(UnknownReason::Inconclusive)] {
+            match merge_results(rdap(), Availability::Unknown(UnknownReason::Inconclusive), dns) {
                 Availability::Taken(d) => assert_eq!(d.expires.as_deref(), Some("2027-01-01")),
                 _ => panic!("expected Taken with RDAP dates"),
             }
@@ -1703,21 +1882,21 @@ Registrar URL: https://brsmedia.fm"#, true),
     }
 
     #[test]
-    fn rdap_available_beats_everything() {
+    fn positive_whois_record_overrides_negative_rdap() {
         let out = merge_results(
             Availability::Available,
             Availability::Taken(DomainDates::default()),
-            Availability::Unknown,
+            Availability::Unknown(UnknownReason::Inconclusive),
         );
-        assert!(matches!(out, Availability::Available));
+        assert!(matches!(out, Availability::Taken(_)));
     }
 
     #[test]
     fn whois_fallback_when_rdap_unknown() {
         let out = merge_results(
-            Availability::Unknown,
+            Availability::Unknown(UnknownReason::Inconclusive),
             Availability::Taken(dates_with_expiry("2027-01-01")),
-            Availability::Unknown,
+            Availability::Unknown(UnknownReason::Inconclusive),
         );
         match out {
             Availability::Taken(d) => assert_eq!(d.expires.as_deref(), Some("2027-01-01")),
@@ -1731,6 +1910,9 @@ Registrar URL: https://brsmedia.fm"#, true),
         assert!(is_likely_premium("x.io"));
         assert!(is_likely_premium("app.dev"));
         assert!(is_likely_premium("four.co"));
+        for domain in ["x.me", "go.me", "pos.me", "4g.me"] {
+            assert!(is_likely_premium(domain), "{domain}");
+        }
     }
 
     #[test]
@@ -1739,11 +1921,13 @@ Registrar URL: https://brsmedia.fm"#, true),
         assert!(!is_likely_premium("go.com"));          // not a flagged TLD
         assert!(!is_likely_premium("go.xyz"));          // not a flagged TLD
         assert!(!is_likely_premium("noseparator"));     // no TLD
+        assert!(!is_likely_premium("four.me"));         // not a blanket rule for longer .me names
+        assert!(!is_likely_premium("myproject.me"));
     }
 
     #[test]
     fn all_unknown_stays_unknown() {
-        let out = merge_results(Availability::Unknown, Availability::Unknown, Availability::Unknown);
-        assert!(matches!(out, Availability::Unknown));
+        let out = merge_results(Availability::Unknown(UnknownReason::Inconclusive), Availability::Unknown(UnknownReason::Inconclusive), Availability::Unknown(UnknownReason::Inconclusive));
+        assert!(matches!(out, Availability::Unknown(_)));
     }
 }

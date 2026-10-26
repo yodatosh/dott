@@ -41,7 +41,7 @@ def main():
             return output.decode(errors='replace')
 
         output = terminal()
-        assert 'porkbun' in output and '$' in output and 'renew' not in output, output
+        assert 'porkbun' in output.lower() and '$' in output, output
         data = json.loads(cache.read_text())
         assert 'com' in data['prices'] and 'org' in data['prices'], data
         print(f'Live Porkbun fetch and terminal estimates passed: {len(data["prices"])} supported TLD prices.', flush=True)

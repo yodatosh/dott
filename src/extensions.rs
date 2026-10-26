@@ -285,7 +285,7 @@ mod tests {
         assert_eq!(s.focus, 0);
         s.key(KeyCode::Left, none());
         assert_eq!(s.focus, 0);
-        for _ in 0..10 { s.key(KeyCode::Down, none()); }
+        for _ in 0..s.order.len().div_ceil(s.cols) { s.key(KeyCode::Down, none()); }
         assert_eq!(s.focus, s.order.len(), "down from the last row lands on All");
         s.key(KeyCode::Up, none());
         assert_eq!(s.focus, (s.order.len() - 1) / 3 * 3);
@@ -350,8 +350,14 @@ mod tests {
         assert_eq!(load_at(&file).unwrap(), None);
         save_at(&file, &["io", "com"]).unwrap();
         assert_eq!(load_at(&file).unwrap(), Some(vec!["com", "io"]));
+        let selected = load_at(&file).unwrap().unwrap();
+        assert_eq!(crate::search_domains("phagy", None, &selected),
+            vec![("pha".into(), "gy"), ("phagy".into(), "com"), ("phagy".into(), "io")]);
+        assert_eq!(load_at(&file).unwrap(), Some(selected), "suffix matches must not change saved choices");
         fs::write(&file, br#"["retired", "bot"]"#).unwrap();
         assert_eq!(load_at(&file).unwrap(), Some(vec!["bot"]));
+        save_at(&file, &["si", "click", "fun"]).unwrap();
+        assert_eq!(load_at(&file).unwrap(), Some(vec!["si", "click", "fun"]));
         fs::write(&file, br#"["retired"]"#).unwrap();
         assert_eq!(load_at(&file).unwrap(), None);
         fs::write(&file, b"not json").unwrap();

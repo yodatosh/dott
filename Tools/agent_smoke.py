@@ -2,7 +2,6 @@
 """Exercise the plain-output agent workflow against live registries (explicit opt-in)."""
 import argparse
 import json
-from pathlib import Path
 import re
 import subprocess
 import time
@@ -36,6 +35,9 @@ def registry(domain):
         'org': 'https://rdap.publicinterestregistry.org/rdap/',
         'dev': 'https://pubapi.registry.google/rdap/',
         'bot': 'https://rdap.nominet.uk/bot/',
+        'si': 'https://rdap.register.si/',
+        'click': 'https://rdap.registry.click/rdap/',
+        'fun': 'https://rdap.radix.host/rdap/',
     }
     url = endpoints[tld] + 'domain/' + domain
     request = urllib.request.Request(url, headers={'User-Agent': 'dott-agent-smoke',
@@ -62,7 +64,8 @@ def main():
     args = parser.parse_args()
     print('Agent workflow: --plain, targeted TLDs, piped domains, suggestions.', flush=True)
     registered = ['google.com', 'github.com', 'openai.com', 'example.com',
-                  'rust-lang.org', 'python.org', 'google.dev', 'amazon.bot']
+                  'rust-lang.org', 'python.org', 'google.dev', 'amazon.bot',
+                  'registry.si', 'nic.click', 'nic.fun']
     rows = query(args.binary, [], '\n'.join(registered) + '\n')
     if set(rows) != set(registered):
         raise RuntimeError('Full-domain pipe did not preserve the requested domains')
@@ -73,11 +76,13 @@ def main():
         print(f'{domain}: {rows[domain]} (registry agrees)', flush=True)
     name = f'dott-agent-probe-{int(time.time())}'
     rows = query(args.binary, [name])
-    if len(rows) != 21:
-        raise RuntimeError(f'Expected 21 TLDs, received {len(rows)}')
+    from audit_registries import targets
+    tlds = [target['tld'] for target in targets()]
+    if set(rows) != {f'{name}.{tld}' for tld in tlds}:
+        raise RuntimeError(f'Expected {len(tlds)} configured TLDs, received {len(rows)} rows')
     counts = {status: list(rows.values()).count(status) for status in sorted(set(rows.values()))}
     print(f'All-TLD agent command: {len(rows)} clean rows; {counts}', flush=True)
-    for tld in ['com', 'org', 'dev', 'bot']:
+    for tld in ['com', 'org', 'dev', 'bot', 'si', 'click', 'fun']:
         domain = f'{name}.{tld}'
         reference = registry(domain)
         if reference == 'unknown':

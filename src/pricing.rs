@@ -28,9 +28,33 @@ impl Default for Cache {
 pub struct Catalog {
     cache: Cache,
     now: u64,
+    refreshing: bool,
 }
 
 impl Catalog {
+    pub fn first_year_quote(&self, domain: &str) -> Option<String> {
+        let tld = domain.rsplit('.').next().unwrap_or("");
+        self.cache.prices.get(tld).map(|price| {
+            let cached = if self.now.saturating_sub(price.fetched_at) >= DAY { " · cached" } else { "" };
+            format!("${} first year{cached}", money(price.registration_cents))
+        })
+    }
+
+    pub fn quote(&self, domain: &str) -> Option<String> {
+        let tld = domain.rsplit('.').next().unwrap_or("");
+        self.cache.prices.get(tld).map(|price| {
+            let cached = if self.now.saturating_sub(price.fetched_at) >= DAY { " · cached" } else { "" };
+            if price.registration_cents == price.renewal_cents {
+                format!("${}/yr{cached}", money(price.registration_cents))
+            } else {
+                format!("${} first year · ${}/yr renewal{cached}", money(price.registration_cents), money(price.renewal_cents))
+            }
+        })
+    }
+
+    pub fn refreshing(&self) -> bool { self.refreshing }
+
+    #[cfg(test)]
     pub fn label(&self, domain: &str) -> String {
         let tld = domain.rsplit('.').next().unwrap_or("");
         match self.cache.prices.get(tld) {
@@ -113,7 +137,7 @@ fn due(cache: &Cache, now: u64) -> bool {
 
 async fn load_at(client: &Client, path: &Path, endpoint: &str, now: u64) -> Catalog {
     let mut cache = read_cache(path, now);
-    let snapshot = |cache| Catalog { cache, now };
+    let snapshot = |cache| Catalog { cache, now, refreshing: false };
     if !due(&cache, now) { return snapshot(cache); }
     // A cross-process lock prevents concurrent terminal sessions from refreshing twice.
     let Some(parent) = path.parent() else { return snapshot(cache); };
@@ -134,18 +158,42 @@ async fn load_at(client: &Client, path: &Path, endpoint: &str, now: u64) -> Cata
     snapshot(cache)
 }
 
-pub async fn load(client: &Client) -> Catalog {
+// The first snapshot is local only. A refresh publishes a replacement without
+// making availability checks or terminal rendering wait for the catalog service.
+fn start_at(client: Client, path: PathBuf, endpoint: String, now: u64) -> tokio::sync::watch::Receiver<Catalog> {
+    let cache = read_cache(&path, now);
+    let initial = Catalog { refreshing: due(&cache, now), cache, now };
+    let refresh = due(&initial.cache, now);
+    let (sender, receiver) = tokio::sync::watch::channel(initial);
+    if refresh {
+        tokio::spawn(async move {
+            let catalog = load_at(&client, &path, &endpoint, now).await;
+            let _ = sender.send(catalog);
+        });
+    }
+    receiver
+}
+
+pub fn start(client: &Client) -> tokio::sync::watch::Receiver<Catalog> {
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
     match home {
-        Some(home) => load_at(client, &PathBuf::from(home).join(".dott/prices.json"), ENDPOINT, now).await,
-        None => Catalog { cache: Cache::default(), now },
+        Some(home) => start_at(client.clone(), PathBuf::from(home).join(".dott/prices.json"), ENDPOINT.into(), now),
+        None => tokio::sync::watch::channel(Catalog { cache: Cache::default(), now, refreshing: false }).1,
     }
+}
+
+#[cfg(test)]
+pub(crate) fn fixture_catalog(refreshing: bool) -> Catalog {
+    let mut cache = Cache::default();
+    cache.prices.insert("com".into(), Price { registration_cents: 1108, renewal_cents: 1200, fetched_at: 100 });
+    Catalog { cache, now: 100, refreshing }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::UnknownReason;
     use std::io::Read;
 
     // Mock servers give up after 10s instead of waiting forever for a client that never connects.
@@ -199,6 +247,95 @@ mod tests {
         save_cache(path, &cache).unwrap();
     }
 
+    #[tokio::test]
+    async fn availability_finishes_while_pricing_response_is_held_open() {
+        for saved_prices in [false, true] {
+            let temp = Temporary::new();
+            let now = 100 + DAY;
+            if saved_prices { seed(&temp.file(), 100); }
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let endpoint = format!("http://{}/pricing/get", listener.local_addr().unwrap());
+            let (requested, request_seen) = tokio::sync::oneshot::channel();
+            let (release, held) = std::sync::mpsc::channel();
+            let server = std::thread::spawn(move || {
+                let mut stream = accept(&listener);
+                stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                let mut request = [0; 4096];
+                let size = stream.read(&mut request).unwrap();
+                let request = std::str::from_utf8(&request[..size]).unwrap();
+                assert!(request.starts_with("GET /pricing/get?tlds="));
+                assert!(!request.contains("example.com"));
+                requested.send(()).unwrap();
+                held.recv_timeout(Duration::from_secs(5)).unwrap();
+                let body = r#"{"status":"SUCCESS","pricing":{"com":{"registration":"13.50","renewal":"14"}}}"#;
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            });
+            // Startup owns the refresh. Searches subscribe to that same catalog,
+            // even after the attempt timestamp has been written to disk.
+            let mut prices = start_at(Client::builder().no_proxy().build().unwrap(), temp.file(), endpoint, now);
+            tokio::time::timeout(Duration::from_secs(3), request_seen).await.unwrap().unwrap();
+            let checks = [std::future::ready((0, ("example.com".into(), crate::Availability::Available)))]
+                .into_iter().collect();
+            let mut rendered = Vec::new();
+            let results = tokio::time::timeout(Duration::from_secs(1),
+                crate::ui::drive(checks, vec!["example.com".into()], prices.clone(), |rows, catalog| {
+                    if let Some(status) = &rows[0] {
+                        rendered.push((status.as_str(), catalog.label("example.com")));
+                    }
+                    Ok(false)
+                })).await.expect("availability must finish before the pricing server responds");
+            assert_eq!(results.unwrap().results.len(), 1);
+            assert_eq!(rendered, vec![("available", if saved_prices {
+                "  $11.08 on porkbun · cached".into()
+            } else { "  price unavailable".into() })]);
+            release.send(()).unwrap();
+            tokio::time::timeout(Duration::from_secs(3), prices.changed()).await.unwrap().unwrap();
+            assert_eq!(prices.borrow().label("example.com"), "  $13.50 on porkbun");
+            assert_eq!(read_cache(&temp.file(), now).attempted_at, Some(now));
+            let checks = [std::future::ready((0, ("example.com".into(), crate::Availability::Available)))]
+                .into_iter().collect();
+            let mut next_search = Vec::new();
+            crate::ui::drive(checks, vec!["example.com".into()], prices.clone(), |rows, catalog| {
+                if rows[0].is_some() { next_search.push(catalog.label("example.com")); }
+                Ok(false)
+            }).await.unwrap();
+            assert_eq!(next_search, vec!["  $13.50 on porkbun"]);
+            server.join().unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn refreshed_prices_repaint_available_rows_while_other_checks_continue() {
+        let initial = Catalog { cache: Cache::default(), now: 100, refreshing: false };
+        let mut updated = initial.clone();
+        updated.cache.prices.insert("com".into(), Price {
+            registration_cents: 1108, renewal_cents: 1200, fetched_at: 100,
+        });
+        let (sender, prices) = tokio::sync::watch::channel(initial);
+        let (release, held) = tokio::sync::oneshot::channel();
+        let mut release = Some(release);
+        let checks = [None, Some(held)].into_iter().enumerate().map(|(index, held)| async move {
+            if let Some(held) = held { held.await.unwrap(); }
+            (index, (format!("example.{}", if index == 0 { "com" } else { "org" }),
+                if index == 0 { crate::Availability::Available } else { crate::Availability::Unknown(UnknownReason::Inconclusive) }))
+        }).collect();
+        let mut rendered = Vec::new();
+        let results = tokio::time::timeout(Duration::from_secs(1),
+            crate::ui::drive(checks, vec!["example.com".into(), "example.org".into()], prices, |rows, catalog| {
+                if rows[0].is_some() {
+                    let value = catalog.quote("example.com");
+                    if rendered.last() != Some(&value) { rendered.push(value.clone()); }
+                    if value.is_some() {
+                        if let Some(release) = release.take() { release.send(()).unwrap(); }
+                    } else { sender.send_replace(updated.clone()); }
+                }
+                Ok(false)
+            })).await.unwrap().unwrap();
+        assert_eq!(results.results.len(), 2);
+        assert_eq!(rendered, vec![None, Some("$11.08 first year · $12.00/yr renewal".into())]);
+        assert_eq!(results.results[1].1.as_str(), "unknown");
+    }
+
     #[test]
     fn decimal_prices_are_exact_and_reject_invalid_values() {
         for (raw, expected) in [("11.08", 1108), ("0.01", 1), ("12", 1200), ("1.5", 150), ("0.00", 0)] {
@@ -228,6 +365,7 @@ mod tests {
         let catalog = load_at(&client, &temp.file(), &url, 100).await;
         server.join().unwrap();
         assert_eq!(catalog.label("example.com"), "  $11.08 on porkbun");
+        assert_eq!(catalog.quote("example.com").unwrap(), "$11.08 first year · $12.00/yr renewal");
         let cached = load_at(&client, &temp.file(), &url, 100 + DAY - 1).await;
         assert_eq!(cached.label("example.com"), catalog.label("example.com"));
         assert_eq!(read_cache(&temp.file(), 100 + DAY).attempted_at, Some(100));
@@ -236,6 +374,43 @@ mod tests {
         server.join().unwrap();
         assert!(updated.label("example.com").contains("$13.50"));
         assert_eq!(read_cache(&temp.file(), 100 + DAY).attempted_at, Some(100 + DAY));
+    }
+
+    #[tokio::test]
+    async fn saved_quotes_show_renewals_without_a_catalog_request() {
+        let temp = Temporary::new();
+        let now = 100 + DAY;
+        let mut cache = Cache { attempted_at: Some(now), ..Default::default() };
+        for (tld, registration_cents, renewal_cents, fetched_at) in [
+            ("com", 1108, 1108, now), ("xyz", 300, 2000, 100), ("dev", 1500, 1000, now),
+        ] {
+            cache.prices.insert(tld.into(), Price { registration_cents, renewal_cents, fetched_at });
+        }
+        save_cache(&temp.file(), &cache).unwrap();
+        let original = fs::read(temp.file()).unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let endpoint = format!("http://{}/pricing/get", listener.local_addr().unwrap());
+        let prices = start_at(Client::builder().no_proxy().build().unwrap(), temp.file(), endpoint, now);
+        let catalog = prices.borrow();
+        assert_eq!(catalog.quote("example.com").unwrap(), "$11.08/yr");
+        assert_eq!(catalog.quote("example.xyz").unwrap(), "$3.00 first year · $20.00/yr renewal · cached");
+        assert_eq!(catalog.quote("example.dev").unwrap(), "$15.00 first year · $10.00/yr renewal");
+        assert_eq!(catalog.quote("example.gg"), None);
+        assert!(prices.has_changed().is_err(), "a fresh cache must not spawn a refresh");
+        assert_eq!(fs::read(temp.file()).unwrap(), original);
+        assert_eq!(listener.accept().unwrap_err().kind(), std::io::ErrorKind::WouldBlock);
+    }
+
+    #[tokio::test]
+    async fn added_extensions_use_catalog_entries_without_domain_queries() {
+        let temp = Temporary::new();
+        let (url, server) = server("200 OK", r#"{"status":"SUCCESS","pricing":{"si":{"registration":"10.00","renewal":"10.00"},"click":{"registration":"2.00","renewal":"8.00"},"fun":{"registration":"3.00","renewal":"20.00"}}}"#);
+        let catalog = load_at(&Client::builder().no_proxy().build().unwrap(), &temp.file(), &url, 100).await;
+        server.join().unwrap();
+        assert_eq!(catalog.quote("example.si").unwrap(), "$10.00/yr");
+        assert_eq!(catalog.quote("example.click").unwrap(), "$2.00 first year · $8.00/yr renewal");
+        assert_eq!(catalog.quote("example.fun").unwrap(), "$3.00 first year · $20.00/yr renewal");
     }
 
     #[tokio::test]

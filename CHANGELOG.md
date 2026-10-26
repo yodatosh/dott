@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+- Result rows show first-year estimates; renewal estimates remain in `/details`. The editor positions its cursor using the visible prompt width.
+- Short `.me` names show a possible-premium hint, including when prices are missing; the input prompt is a single cyan `>`.
+- Bare-name searches put exact suffix splits first (`phagy` → `pha.gy`), regardless of selected extensions; full-domain searches remain exact.
+- Added `.gy`, `.ly`, `.to`, `.is`, `.tv`, `.in`, `.id`, and `.fr`; registry routing uses a bundled IANA directory and one extension catalog.
+- Audited all 24 registries; hardened query matching, WHOIS error detection, DNS validation, and conflicting-result handling, with saved offline fixtures.
+- Typing `/` opens filtered command suggestions with arrow-key selection and argument completion.
+- Registry DPML checks prevent trademark-protected labels from appearing available; corrected the `.work` registry endpoint.
+- Added `.si`, `.click`, and `.fun` with registry RDAP and WHOIS checks.
+- Price estimates show first-year and renewal costs when they differ, using the existing cache.
+- Inconclusive checks explain registry timeouts, rate limits, and malformed replies, with a retry hint.
+- Quieter results with expiry-only dates, a complete status summary, and one pricing notice.
+- Inline search results with ordinary terminal selection and scrollback.
+- Input history, cursor editing, Ctrl+U, and editable multiline paste.
+- `/details` shows full dates; `/results` shows the last results again.
+- Persistent shortlists; `/retry` checks only inconclusive results.
+- Availability no longer waits for pricing; suggestions include later keywords and combinations.
+- Terminal searches flag newly taken names using bounded local check history.
+
 ## 0.8.0 — 2026-10-02
 
 **New**

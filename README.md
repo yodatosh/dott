@@ -38,26 +38,36 @@ echo myname | dott          # pipe mode (plain)
 ```
 
 ```text
-  ✓  myname.com   $11.08 on porkbun
-  ✓  myname.org   $7.98 on porkbun
-  ★  myname.dev   reserved / blocked
+  ✓  myname.com   $11.08/yr
+  ✓  myname.org   $7.98/yr
+  ★  myname.dev   reserved
   ?  myname.gg
-  ✗  myname.io    reg 2019-05-02  exp 2026-08-15
+  ✗  myname.io    expires Aug 2026
 
-  2 available  ·  5 checked
+  2 available · 1 taken · 1 reserved · 1 inconclusive
 ```
 
-`✓` available · `✗` taken · `★` reserved · `?` unknown (inconclusive). Expiry dates turn orange under 90 days, yellow under a year.
+`✓` available · `✗` taken · `★` reserved / trademark protected · `?` unknown (inconclusive). Expiry is shown when space allows; full dates are in the details view.
+
+Inconclusive results show a short reason when space allows, such as a registry timeout or rate limit. `/details <domain>` shows the full reason; `/retry` checks only inconclusive names again.
 
 Plain statuses are `available`, `taken`, `protected` and `unknown`; scripts and agents should treat only `available` as available. Invalid input exits nonzero with a message on stderr.
 
 Interactive commands:
 
+Type `/` to see commands immediately, then keep typing to filter. Use ↑/↓ and Enter to choose; commands needing a domain fill in the command and wait for your input. Esc closes the menu.
+
 | Input               | What it does                            |
 |---------------------|-----------------------------------------|
 | `name` / `name.tld` | check your chosen extensions / one domain |
 | `name+`, `+`        | suggest variants (of the last name)     |
+| `name+.tld`         | suggest variants on one extension       |
 | `/tlds`             | choose extensions (keyboard or mouse)   |
+| `/results`         | show the last results again              |
+| `/details <domain>` | show details for a result              |
+| `/retry`           | retry only inconclusive checks          |
+| `/shortlist`       | list saved names                        |
+| `/save <domain>`, `/unsave <domain>` | add or remove a shortlisted name |
 | `/watch <domain>`   | notify when a domain becomes free       |
 | `/unwatch <domain>` | stop watching                           |
 | `/list`             | show watchlist                          |
@@ -65,9 +75,21 @@ Interactive commands:
 
 Your `/tlds` choice is saved in `~/.dott/extensions.json`. `--tlds` overrides it for one run, a full domain always checks just that domain, and plain/piped output ignores it.
 
+Bare-name searches also detect matching supported endings: `phagy` checks `pha.gy`
+first, followed by your chosen extensions. These exact spelling matches appear
+even when their extension is not selected. Full-domain searches stay exact.
+
+Use ↑/↓ for input history, ←/→ to edit, and Ctrl+U to clear. Pasted text stays editable; Esc cancels a running search. Results are ordinary terminal text: select and copy normally, or use `/details <domain>` for full dates. Shortlists are saved in `~/.dott/shortlist.json`, separately from watches.
+
+Terminal searches flag names that were available at your last conclusive check and are now taken. `~/.dott/checks.json` keeps only the latest known status per domain: up to 2,000 names for 90 days (under 300 KB). Inconclusive checks preserve the previous status. Plain output does not use this history.
+
 ## Prices
 
 Available names show standard USD yearly estimates from [Porkbun's public catalog](https://porkbun.com/api/json/v3/pricing/get). Premium names and checkout totals may differ. Prices are refreshed at most once a day and saved in `~/.dott/prices.json`; plain output never includes them.
+
+Results show the first-year estimate, such as `$3.00 first year`. Use `/details <domain>` for renewal estimates.
+
+Availability appears without waiting for prices. Saved prices show immediately; refreshed prices update available rows while checks continue. Missing estimates get one shared notice.
 
 ## Watchlist
 
@@ -83,11 +105,13 @@ Changes (became available, was registered, now reserved) also show when you open
 
 ## How it works
 
-Each domain is checked against the registry's RDAP server, WHOIS (port 43) and Cloudflare DNS-over-HTTPS. Results merge with DNS > RDAP > WHOIS priority. Interactive mode pre-opens connections to the servers for your chosen extensions at startup (no domain names sent) so the first search is fast. "Available" means no registration was found — not a guarantee a registrar will sell it.
+Each domain is checked against the registry's RDAP server, WHOIS (port 43) and Cloudflare DNS-over-HTTPS. Positive registration or protection evidence wins over missing-record replies; missing DNS never means available. Interactive mode pre-opens connections for your chosen extensions (no domain names sent). "Available" means no registration was found — not a guarantee a registrar will sell it. See the [registry audit](REGISTRY_AUDIT.md) for coverage and limits.
+
+For `.fyi`, `.live`, and `.computer`, missing registrations also get a registry DPML lookup. Matching trademark-protection records show `★ trademark protected`, never an available price. `/details` explains the record; coverage can have registry and registrar exceptions. These lookups are shared and cached in memory for 60 seconds.
 
 ## Supported TLDs
 
-com, net, org, io, dev, app, co, ai, me, so, gg, cc, cv, xyz, live, computer, sh, fm, fyi, work, bot
+com, net, org, io, dev, app, co, ai, me, so, gg, cc, cv, xyz, live, computer, sh, fm, fyi, work, bot, si, click, fun, gy, ly, to, is, tv, in, id, fr
 
 ## License
 
