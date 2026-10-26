@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Inline TUI with a framed search composer, slash suggestions above the input, responsive layout, and clean submitted queries in terminal scrollback.
 - Result rows show first-year estimates; renewal estimates remain in `/details`. The editor positions its cursor using the visible prompt width.
 - Short `.me` names show a possible-premium hint, including when prices are missing; the input prompt is a single cyan `>`.
 - Bare-name searches put exact suffix splits first (`phagy` → `pha.gy`), regardless of selected extensions; full-domain searches remain exact.

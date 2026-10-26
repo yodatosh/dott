@@ -540,15 +540,10 @@ fn print_help() {
 
 fn print_cat() {
     println!();
-    println!("{}", "   ____       _   _ ".truecolor(255, 155, 0));
-    println!("{}", "  |  _ \\  ___| |_| |_".truecolor(255, 60, 90));
-    println!("{}", "  | | | |/ _ \\ __| __|".truecolor(180, 50, 230));
-    println!("{}", "  | |_| | (_) | |_| |_".truecolor(80, 130, 255));
-    println!("{}", format!("  |____/ \\___/ \\__|\\__|  v{}", env!("CARGO_PKG_VERSION")).truecolor(50, 215, 235));
+    println!("  {}  {}", "dott".truecolor(64, 194, 207).bold(),
+        format!("v{} · private domain search", env!("CARGO_PKG_VERSION")).truecolor(145, 150, 165));
     println!();
-    println!("{}", "  private domain search".truecolor(160, 160, 175));
-    println!("{}", ui::clip("  type a name · / for commands · esc to quit", ui::width().saturating_sub(1)).truecolor(155, 155, 175));
-    println!();
+    println!("{}", ui::clip("  Find your next name. Exact domain splits appear first.", ui::width().saturating_sub(1)).truecolor(155, 155, 175));
     println!();
 }
 

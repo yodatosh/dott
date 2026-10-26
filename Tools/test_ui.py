@@ -176,18 +176,35 @@ class TerminalTests(unittest.TestCase):
 
     def test_cursor_tracks_the_single_chevron_prompt_and_edited_text(self):
         t = self.terminal
-        t.expect('\x1b[5G')  # Two spaces, >, one space: input starts in column 5.
-        self.assertEqual(t.x, 4)
+        t.expect(';7H')  # Framed input: margin, border, space, >, space.
+        self.assertEqual(t.x, 6)
         t.send('abc')
         t.expect('> abc')
-        t.expect('\x1b[8G')
-        self.assertEqual(t.x, 7)
+        t.expect(';10H')
+        self.assertEqual(t.x, 9)
         t.send('\x1b[D')
-        t.expect('\x1b[7G')
-        self.assertEqual(t.x, 6)
+        t.expect(';9H')
+        self.assertEqual(t.x, 8)
         t.send('X\r')
         t.expect('INPUT:abXc')
         t.ready()
+
+    def test_composer_is_framed_and_commands_appear_above_it(self):
+        t = self.terminal
+        self.assertIn('╭─ search ', t.output)
+        self.assertIn('Search a name or type /', t.output)
+        self.assertIn('enter search', t.output)
+        t.send('/')
+        t.expect('Choose extensions')
+        t.expect('> /')
+        screen = [''.join(line) for line in t.screen]
+        command = next(i for i, line in enumerate(screen) if 'Choose extensions' in line)
+        composer = next(i for i, line in enumerate(screen) if '╭─ search ' in line)
+        self.assertLess(command, composer)
+        self.assertNotIn('\x1b[?1049', t.output)
+        t.send('\x1b')
+        t.expect('> /')
+        self.assertNotIn('Choose extensions', '\n'.join(''.join(line) for line in t.screen))
 
     def test_history_cursor_editing_clear_and_multiline_paste(self):
         t = self.terminal

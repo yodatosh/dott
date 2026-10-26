@@ -79,7 +79,7 @@ Bare-name searches also detect matching supported endings: `phagy` checks `pha.g
 first, followed by your chosen extensions. These exact spelling matches appear
 even when their extension is not selected. Full-domain searches stay exact.
 
-Use ↑/↓ for input history, ←/→ to edit, and Ctrl+U to clear. Pasted text stays editable; Esc cancels a running search. Results are ordinary terminal text: select and copy normally, or use `/details <domain>` for full dates. Shortlists are saved in `~/.dott/shortlist.json`, separately from watches.
+Interactive mode uses an inline TUI: a framed search field, command suggestions above it, and a keyboard-hint footer. It stays in normal terminal scrollback. Use ↑/↓ for input history, ←/→ to edit, and Ctrl+U to clear. Pasted text stays editable; Esc cancels a running search. Results are ordinary terminal text: select and copy normally, or use `/details <domain>` for full dates. Shortlists are saved in `~/.dott/shortlist.json`, separately from watches.
 
 Terminal searches flag names that were available at your last conclusive check and are now taken. `~/.dott/checks.json` keeps only the latest known status per domain: up to 2,000 names for 90 days (under 300 KB). Inconclusive checks preserve the previous status. Plain output does not use this history.
 

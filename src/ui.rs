@@ -281,6 +281,72 @@ impl Editor {
     }
 }
 
+struct ComposerFrame {
+    lines: Vec<String>,
+    cursor: (usize, usize),
+}
+
+// Plan the entire inline region before writing. The menu lives above the
+// composer; previous searches stay outside this region in normal scrollback.
+fn composer_frame(suggestions: &crate::commands::Suggestions, prompt: &str, editor: &Editor,
+    columns: u16, height: u16) -> ComposerFrame {
+    let width = columns.saturating_sub(1) as usize;
+    let height = height.max(1) as usize;
+    let framed = width >= 20 && height >= 4;
+    let composer_rows = if framed { 4 } else { height.min(2) };
+    let capacity = height.saturating_sub(composer_rows);
+    let options = suggestions.options();
+    let visible = if capacity == 0 { 0 } else { options.len().min(capacity.saturating_sub(1).max(1)).min(6) };
+    let selected = suggestions.selected_index();
+    let start = selected.saturating_sub(visible.saturating_sub(1)).min(options.len().saturating_sub(visible));
+    let mut lines = Vec::new();
+    for (index, command) in options.iter().enumerate().skip(start).take(visible) {
+        let text = if width >= 50 {
+            format!("  {} {:<18} {}", if index == selected { "›" } else { " " }, command.usage(), command.description)
+        } else { format!("  {} {}", if index == selected { "›" } else { " " }, command.usage()) };
+        let text = clip(&text, width);
+        lines.push(if index == selected { text.bright_white().bold().to_string() }
+            else { text.truecolor(155, 155, 175).to_string() });
+    }
+    if visible > 0 && lines.len() < capacity {
+        let hint = if width >= 55 { format!("  ↑/↓ choose · enter select · esc close · {}–{}/{}", start + 1, start + visible, options.len()) }
+            else { "  ↑/↓ · enter · esc".into() };
+        lines.push(clip(&hint, width).truecolor(115, 120, 135).to_string());
+    }
+    let input_row;
+    let input_col;
+    let cursor_col;
+    if framed {
+        let inside = width - 4;
+        let label = "─ search ";
+        lines.push(format!("  ╭{label}{}╮", "─".repeat(inside - label.chars().count())).truecolor(85, 95, 110).to_string());
+        input_row = lines.len();
+        let prefix = format!("  │ {}", prompt.trim_start());
+        input_col = prompt_width(&prefix);
+        let cells = width.saturating_sub(input_col + 2).max(1);
+        let (text, caret) = editor.visible(cells);
+        cursor_col = caret;
+        let content = if editor.text.is_empty() {
+            format!("{:<cells$}", clip("Search a name or type /", cells)).truecolor(100, 105, 120).to_string()
+        } else { format!("{text:<cells$}") };
+        lines.push(format!("{prefix}{content} {}", "│".truecolor(85, 95, 110)));
+        lines.push(format!("  ╰{}╯", "─".repeat(inside)).truecolor(85, 95, 110).to_string());
+    } else {
+        input_row = lines.len();
+        let prefix = clip("> ", width.saturating_sub(1));
+        input_col = prefix.chars().count();
+        let (text, caret) = editor.visible(width.saturating_sub(input_col).max(1));
+        cursor_col = caret;
+        lines.push(clip(&format!("{prefix}{text}"), width));
+    }
+    if composer_rows > if framed { 3 } else { 1 } {
+        let help = if width >= 65 { "  enter search · / commands · ↑/↓ history · esc quit" }
+            else { "  enter search · / commands" };
+        lines.push(clip(help, width).truecolor(115, 120, 135).to_string());
+    }
+    ComposerFrame { lines, cursor: ((input_col + cursor_col).min(width.saturating_sub(1)), input_row) }
+}
+
 #[derive(Default)]
 struct CommandMenuView {
     anchor: Option<u16>,
@@ -289,12 +355,11 @@ struct CommandMenuView {
 
 impl CommandMenuView {
     fn clear(&mut self) -> io::Result<()> {
-        if self.shown == 0 { return Ok(()); }
         let Some(anchor) = self.anchor else { return Ok(()); };
         let height = terminal::size()?.1;
         let mut out = io::stdout();
         for i in 0..self.shown {
-            let row = anchor as usize + i + 1;
+            let row = anchor as usize + i;
             if row < height as usize { queue!(out, cursor::MoveTo(0, row as u16), Clear(ClearType::CurrentLine))?; }
         }
         queue!(out, cursor::MoveTo(0, anchor.min(height.saturating_sub(1))))?;
@@ -302,48 +367,38 @@ impl CommandMenuView {
         out.flush()
     }
 
+    fn submit(&mut self, prompt: &str, input: &str) -> io::Result<()> {
+        self.clear()?;
+        let mut out = io::stdout();
+        let cells = width().saturating_sub(prompt_width(prompt) + 1);
+        let text: String = input.chars().map(|c| if c.is_ascii() { c } else { '?' }).collect();
+        write!(out, "{prompt}{}\r\n", clip(&text, cells))?;
+        self.anchor = None;
+        out.flush()
+    }
+
     fn draw(&mut self, suggestions: &crate::commands::Suggestions, prompt: &str, editor: &Editor) -> io::Result<()> {
         let (columns, height) = terminal::size()?;
-        let width = (columns as usize).saturating_sub(1);
-        let capacity = (height as usize).saturating_sub(2).min(6);
-        let options = suggestions.options();
-        let visible = options.len().min(capacity);
-        let selected = suggestions.selected_index();
-        let start = selected.saturating_sub(visible.saturating_sub(1)).min(options.len().saturating_sub(visible));
-        let mut lines = Vec::new();
-        for (index, command) in options.iter().enumerate().skip(start).take(visible) {
-            let text = clip(&format!("  {} {:<18} {}", if index == selected { "›" } else { " " }, command.usage(), command.description), width);
-            lines.push(if index == selected { text.bright_white().bold().to_string() } else { text.truecolor(155, 155, 175).to_string() });
-        }
-        if visible > 0 {
-            let hint = if width >= 55 { format!("  ↑/↓ choose · enter select · esc close · {}–{}/{}", start + 1, start + visible, options.len()) }
-                else { format!("  ↑/↓ · enter · esc  {}–{}/{}", start + 1, start + visible, options.len()) };
-            lines.push(clip(&hint, width).truecolor(145, 145, 165).to_string());
-        }
-        if !lines.is_empty() && self.anchor.is_none() { self.anchor = Some(cursor::position()?.1); }
+        let frame = composer_frame(suggestions, prompt, editor, columns, height);
+        if self.anchor.is_none() { self.anchor = Some(cursor::position()?.1); }
+        let anchor = self.anchor.as_mut().unwrap();
+        *anchor = (*anchor).min(height.saturating_sub(1));
+        let overflow = (*anchor as usize + frame.lines.len()).saturating_sub(height as usize);
         let mut out = io::stdout();
-        if let Some(anchor) = self.anchor.as_mut() {
-            *anchor = (*anchor).min(height.saturating_sub(1));
-            let overflow = (*anchor as usize + lines.len() + 1).saturating_sub(height as usize);
-            if overflow > 0 {
-                queue!(out, cursor::MoveTo(0, height.saturating_sub(1)))?;
-                for _ in 0..overflow { write!(out, "\r\n")?; }
-                *anchor = anchor.saturating_sub(overflow as u16);
-            }
-            for i in 0..self.shown.max(lines.len()) {
-                let row = *anchor as usize + i + 1;
-                if row >= height as usize { break; }
-                queue!(out, cursor::MoveTo(0, row as u16), Clear(ClearType::CurrentLine))?;
-                if let Some(line) = lines.get(i) { write!(out, "{line}")?; }
-            }
-            queue!(out, cursor::MoveTo(0, *anchor))?;
+        queue!(out, cursor::Hide)?;
+        if overflow > 0 {
+            queue!(out, cursor::MoveTo(0, height.saturating_sub(1)))?;
+            for _ in 0..overflow { write!(out, "\r\n")?; }
+            *anchor = anchor.saturating_sub(overflow as u16);
         }
-        self.shown = lines.len();
-        let prompt_cells = prompt_width(prompt);
-        let (visible, cursor_col) = editor.visible((columns as usize).saturating_sub(prompt_cells + 1).max(1));
-        queue!(out, cursor::MoveToColumn(0), Clear(ClearType::CurrentLine))?;
-        write!(out, "{prompt}{visible}")?;
-        queue!(out, cursor::MoveToColumn((prompt_cells + cursor_col).min(columns.saturating_sub(1) as usize) as u16))?;
+        for i in 0..self.shown.max(frame.lines.len()) {
+            let row = *anchor as usize + i;
+            if row >= height as usize { break; }
+            queue!(out, cursor::MoveTo(0, row as u16), Clear(ClearType::CurrentLine))?;
+            if let Some(line) = frame.lines.get(i) { write!(out, "{line}")?; }
+        }
+        self.shown = frame.lines.len();
+        queue!(out, cursor::MoveTo(frame.cursor.0 as u16, anchor.saturating_add(frame.cursor.1 as u16)), cursor::Show)?;
         out.flush()
     }
 }
@@ -390,9 +445,8 @@ pub fn read_input(prompt: &str, history: &mut Vec<String>) -> io::Result<Option<
                         suggestions.dismiss();
                         menu.draw(&suggestions, prompt, &editor)?;
                     }
-                    menu.clear()?;
-                    print!("\r\n");
                     let input: String = editor.text.iter().collect();
+                    menu.submit(prompt, &input)?;
                     if !input.trim().is_empty() && history.last() != Some(&input) {
                         history.push(input.clone());
                         if history.len() > 100 { history.remove(0); }
@@ -405,10 +459,7 @@ pub fn read_input(prompt: &str, history: &mut Vec<String>) -> io::Result<Option<
                 }
             },
             Event::Paste(text) => editor.insert(&text),
-            Event::Resize(_, _) if menu.anchor.is_some() => {
-                menu.clear()?;
-                menu.anchor = Some(cursor::position()?.1);
-            }
+            Event::Resize(_, _) => {}
             _ => {}
         }
     }
@@ -545,6 +596,31 @@ mod tests {
         assert_eq!(prompt_width("  > "), 4);
         assert_eq!(prompt_width("  \x1b[1;38;2;255;60;90m>\x1b[0m "), 4);
         assert_eq!(prompt_width(&crate::input_prompt()), 4);
+    }
+
+    #[test]
+    fn composer_fits_small_terminals_and_preserves_editing_positions() {
+        let mut editor = Editor::default();
+        editor.insert("phagy");
+        editor.key(KeyCode::Left, KeyModifiers::NONE, &[]);
+        let mut suggestions = crate::commands::Suggestions::default();
+        for input in ["", "/", "/wa"] {
+            suggestions.update(input);
+            for columns in [1, 2, 4, 10, 21, 28, 80, 120] {
+                for height in [1, 2, 4, 6, 24] {
+                    let frame = composer_frame(&suggestions, &crate::input_prompt(), &editor, columns, height);
+                    assert!(frame.lines.len() <= height as usize);
+                    assert!(frame.cursor.0 < columns as usize);
+                    assert!(frame.cursor.1 < frame.lines.len());
+                    for line in frame.lines {
+                        assert!(prompt_width(&line) <= columns.saturating_sub(1) as usize, "{columns} columns: {line}");
+                    }
+                }
+            }
+        }
+        let frame = composer_frame(&Default::default(), "  > ", &editor, 80, 24);
+        assert_eq!(frame.cursor, (10, 1));
+        assert!(plain(&frame.lines[1]).contains("> phagy"));
     }
 
     #[test]
