@@ -42,12 +42,12 @@ echo myname | dott          # pipe mode (plain)
   ✓  myname.org   $7.98/yr
   ★  myname.dev   reserved
   ?  myname.gg
-  ✗  myname.io    expires Aug 2026
+  ✗  myname.io    reg 2014-03-02  upd 2025-08-01  exp 2026-08-14
 
   2 available · 1 taken · 1 reserved · 1 inconclusive
 ```
 
-`✓` available · `✗` taken · `★` reserved / trademark protected · `?` unknown (inconclusive). Expiry is shown when space allows; full dates are in the details view.
+`✓` available · `✗` taken · `★` reserved / trademark protected · `?` unknown (inconclusive). Taken names show registered, updated and expiry dates when space allows; expiry turns orange within a year and red within 90 days.
 
 Inconclusive results show a short reason when space allows, such as a registry timeout or rate limit. `/details <domain>` shows the full reason; `/retry` checks only inconclusive names again.
 
@@ -79,7 +79,7 @@ Bare-name searches also detect matching supported endings: `phagy` checks `pha.g
 first, followed by your chosen extensions. These exact spelling matches appear
 even when their extension is not selected. Full-domain searches stay exact.
 
-Interactive mode uses an inline TUI: a framed search field, command suggestions above it, and a keyboard-hint footer. It stays in normal terminal scrollback. Use ↑/↓ for input history, ←/→ to edit, and Ctrl+U to clear. Pasted text stays editable; Esc cancels a running search. Results are ordinary terminal text: select and copy normally, or use `/details <domain>` for full dates. Shortlists are saved in `~/.dott/shortlist.json`, separately from watches.
+Interactive mode opens on a clean window with the gradient logo and a `❯❯❯` prompt on the bottom row. Typing `/` lists commands above the prompt; Tab completes without running them. Use ↑/↓ for history, ←/→ to edit, Ctrl+W to delete a word, and Ctrl+U to clear. Pasted text stays editable. Live searches show progress; ↑/↓ or Page Up/Down scroll results, and Esc cancels. The extension picker scrolls with keyboard focus. Finished results stay in normal terminal scrollback for selection and copying; `/details <domain>` shows full dates. Shortlists are saved in `~/.dott/shortlist.json`, separately from watches.
 
 Terminal searches flag names that were available at your last conclusive check and are now taken. `~/.dott/checks.json` keeps only the latest known status per domain: up to 2,000 names for 90 days (under 300 KB). Inconclusive checks preserve the previous status. Plain output does not use this history.
 
@@ -87,7 +87,7 @@ Terminal searches flag names that were available at your last conclusive check a
 
 Available names show standard USD yearly estimates from [Porkbun's public catalog](https://porkbun.com/api/json/v3/pricing/get). Premium names and checkout totals may differ. Prices are refreshed at most once a day and saved in `~/.dott/prices.json`; plain output never includes them.
 
-Results show the first-year estimate, such as `$3.00 first year`. Use `/details <domain>` for renewal estimates.
+Results show the first-year estimate, such as `$3.00 on Porkbun`. Use `/details <domain>` for renewal estimates.
 
 Availability appears without waiting for prices. Saved prices show immediately; refreshed prices update available rows while checks continue. Missing estimates get one shared notice.
 
@@ -111,7 +111,7 @@ For `.fyi`, `.live`, and `.computer`, missing registrations also get a registry 
 
 ## Supported TLDs
 
-com, net, org, io, dev, app, co, ai, me, so, gg, cc, cv, xyz, live, computer, sh, fm, fyi, work, bot, si, click, fun, gy, ly, to, is, tv, in, id, fr
+com, net, org, io, dev, app, co, ai, me, so, gg, cc, cv, xyz, live, computer, sh, fm, fyi, work, bot, si, click, fun, gy, ly, to, is, tv, in, id, fr, pt
 
 ## License
 

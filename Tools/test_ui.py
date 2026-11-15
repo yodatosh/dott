@@ -34,10 +34,17 @@ def test_binary():
 
 
 class Terminal:
-    def __init__(self, home, columns=90, rows=24):
+    def __init__(self, home, columns=90, rows=24, truecolor=None):
         binary = test_binary()
         env = dict(os.environ, HOME=str(home), DOTT_UI_FIXTURE='1',
                    DOTT_NO_UPDATE_CHECK='1', TERM='xterm-256color')
+        if truecolor is not None:
+            env.pop('NO_COLOR', None)
+            env['CLICOLOR_FORCE'] = '1'
+            if truecolor:
+                env['COLORTERM'] = 'truecolor'
+            else:
+                env.pop('COLORTERM', None)
         self.pid, self.master = pty.fork()
         if self.pid == 0:
             os.execve(str(binary), [str(binary), '--ignored', '--exact',
@@ -93,6 +100,13 @@ class Terminal:
                 elif code == 'K':
                     start, end = (0, self.columns) if value == 2 else (self.x, self.columns)
                     self.screen[self.y][start:end] = [' '] * (end - start)
+                elif code == 'J':
+                    if value == 2:
+                        self.screen = [[' '] * self.columns for _ in range(self.rows)]
+                    else:
+                        self.screen[self.y][self.x:] = [' '] * (self.columns - self.x)
+                        for row in range(self.y + 1, self.rows):
+                            self.screen[row] = [' '] * self.columns
                 elif code == 'A':
                     self.y = max(0, self.y - (value or 1))
                 elif code == 'B':
@@ -145,7 +159,7 @@ class Terminal:
 
     def ready(self):
         captured = self.expect('FIXTURE_READY')
-        self.expect('> ')
+        self.expect('❯❯❯ ')
         return captured
 
     def close(self):
@@ -176,10 +190,10 @@ class TerminalTests(unittest.TestCase):
 
     def test_cursor_tracks_the_single_chevron_prompt_and_edited_text(self):
         t = self.terminal
-        t.expect(';7H')  # Framed input: margin, border, space, >, space.
+        t.expect(';7H')  # Inline prompt: margin, ❯❯❯, space.
         self.assertEqual(t.x, 6)
         t.send('abc')
-        t.expect('> abc')
+        t.expect('❯❯❯ abc')
         t.expect(';10H')
         self.assertEqual(t.x, 9)
         t.send('\x1b[D')
@@ -189,22 +203,59 @@ class TerminalTests(unittest.TestCase):
         t.expect('INPUT:abXc')
         t.ready()
 
-    def test_composer_is_framed_and_commands_appear_above_it(self):
+    def test_opens_on_a_clean_window_with_the_classic_banner_and_bottom_prompt(self):
         t = self.terminal
-        self.assertIn('╭─ search ', t.output)
-        self.assertIn('Search a name or type /', t.output)
-        self.assertIn('enter search', t.output)
+        t.expect(';7H')
+        screen = [''.join(line).rstrip() for line in t.screen]
+        logo = next(i for i, line in enumerate(screen) if line.startswith('  |____/'))
+        self.assertIn('v', screen[logo])
+        self.assertIn('  type a name and hit enter. /help for commands · esc to quit.', screen)
+        # The prompt sits on the last row; the rows between are free for output.
+        self.assertEqual(t.y, len(screen) - 1)
+        self.assertEqual(screen[t.y].strip(), '❯❯❯')
+        ready = screen.index('FIXTURE_READY')  # Printed by the test fixture.
+        self.assertTrue(all(line == '' for line in screen[ready + 1:t.y]))
+        for glyph in ['╭', '╰', '│']:
+            self.assertNotIn(glyph, t.output)
+
+    def test_menu_opens_above_the_bottom_prompt_and_keeps_finished_results(self):
+        t = self.terminal
+        t.send('show\r')
+        t.ready()
+        t.send('/')
+        t.expect('enter select')
+        screen = [''.join(line) for line in t.screen]
+        prompt = next(i for i, line in enumerate(screen) if '❯❯❯ /' in line)
+        menu = next(i for i, line in enumerate(screen) if 'Choose extensions' in line)
+        self.assertLess(menu, prompt)
+        self.assertEqual(prompt, len(screen) - 1)
+        for domain in ['example.com', 'example.io', 'example.gg', 'example.dev']:
+            self.assertIn(domain, '\n'.join(screen))
+        t.position = len(t.output)
+        t.send('\x1b')
+        t.expect('❯❯❯ /')
+        self.assertNotIn('Choose extensions', '\n'.join(''.join(line) for line in t.screen))
+
+    def test_live_rows_spin_inline_below_the_query(self):
+        t = self.terminal
+        t.send('cancel\r')
+        t.expect('example.com')
+        screen = [''.join(line).rstrip() for line in t.screen]
+        query = next(i for i, line in enumerate(screen) if line == '  ❯❯❯ cancel')
+        row = next(i for i, line in enumerate(screen) if 'example.com' in line)
+        self.assertEqual(row, query + 2)
+        self.assertNotIn('Checking domains', t.output)
+        t.send('\x1b')
+        t.expect('CANCELLED')
+        t.ready()
+
+    def test_composer_is_a_plain_prompt_without_placeholder_or_footer(self):
+        t = self.terminal
+        for text in ['Search a name or type /', 'enter search', '╭']:
+            self.assertNotIn(text, t.output)
         t.send('/')
         t.expect('Choose extensions')
-        t.expect('> /')
-        screen = [''.join(line) for line in t.screen]
-        command = next(i for i, line in enumerate(screen) if 'Choose extensions' in line)
-        composer = next(i for i, line in enumerate(screen) if '╭─ search ' in line)
-        self.assertLess(command, composer)
         self.assertNotIn('\x1b[?1049', t.output)
-        t.send('\x1b')
-        t.expect('> /')
-        self.assertNotIn('Choose extensions', '\n'.join(''.join(line) for line in t.screen))
 
     def test_history_cursor_editing_clear_and_multiline_paste(self):
         t = self.terminal
@@ -226,11 +277,11 @@ class TerminalTests(unittest.TestCase):
         t.expect('Choose extensions')
         self.assertNotIn('INPUT:/', t.output)
         t.send('wa')
-        t.expect('> /wa')
+        t.expect('❯❯❯ /wa')
         self.assertIn('Watch a domain', '\n'.join(''.join(row) for row in t.screen))
         self.assertNotIn('/tlds', '\n'.join(''.join(row) for row in t.screen))
         t.send('\r')
-        t.expect('> /watch ')
+        t.expect('❯❯❯ /watch ')
         self.assertFalse((self.home / '.dott/watchlist.json').exists())
         t.send('example.si\r')
         t.expect('ACTION:Watch("example.si")')
@@ -246,10 +297,10 @@ class TerminalTests(unittest.TestCase):
         t.ready()
         t.send('/')
         t.expect('Choose extensions')
-        t.expect('> /')
+        t.expect('❯❯❯ /')
         t.position = len(t.output)
         t.send('\x1b')
-        t.expect('> /')
+        t.expect('❯❯❯ /')
         self.assertNotIn('Choose extensions', '\n'.join(''.join(row) for row in t.screen))
         t.send('\x15still-here\r')
         t.expect('INPUT:still-here')
@@ -272,14 +323,90 @@ class TerminalTests(unittest.TestCase):
         self.assertNotIn('\x1b[?1049', t.output)
         self.assertNotIn('\x1b[?1000h', t.output)
 
+    def test_narrowing_keeps_results_and_the_prompt(self):
+        t = self.terminal
+        t.send('show\r')
+        t.ready()
+        t.expect(';7H')
+        t.resize(60, 24)
+        t.send('x')
+        t.expect('❯❯❯ x')
+        screen = [''.join(row).rstrip() for row in t.screen]
+        for domain in ['example.com', 'example.io', 'example.gg', 'example.dev']:
+            self.assertTrue(any(domain in line for line in screen), domain)
+        self.assertEqual(screen[t.y], '  ❯❯❯ x')
+
+    def test_tab_completes_without_submitting_and_word_editing_stays_local(self):
+        t = self.terminal
+        t.send('/he\t')
+        t.expect('❯❯❯ /help')
+        self.assertNotIn('INPUT:/help', t.output)
+        t.send('\r')
+        t.expect('INPUT:/help')
+        t.ready()
+        t.send('/wa\texample.com extra\x17\r')
+        t.expect('ACTION:Watch("example.com ")')
+        t.ready()
+        self.assertFalse((self.home / '.dott/watchlist.json').exists())
+
+    def test_extension_picker_scrolls_to_focus_and_keeps_apply_visible(self):
+        t = self.terminal
+        t.resize(28, 6)
+        t.expect('❯❯❯ ')
+        t.send('/tlds\r')
+        t.expect('Choose extensions')
+        t.send('\x1b[F')  # End focuses Apply, scrolling to the last grid row.
+        t.expect('[Apply]')
+        t.expect('space toggle')
+        screen = '\n'.join(''.join(row) for row in t.screen)
+        self.assertIn('[Apply]', screen)
+        t.send('\x1b[H')
+        t.expect('.com')
+        t.send(' \r')
+        t.expect('ACTION:Tlds(Some(["io"]))')
+        t.ready()
+        self.assertFalse((self.home / '.dott/extensions.json').exists())
+
+    def test_pending_results_scroll_by_page_and_reflow_after_resize(self):
+        t = self.terminal
+        t.resize(50, 7)
+        t.expect('❯❯❯ ')
+        t.send('browse\r')
+        t.expect('1–4/32')
+        t.send('\x1b[6~')
+        t.expect('5–8/32')
+        t.send('\x1b[F')
+        t.expect('29–32/32')
+        t.resize(90, 12)
+        t.expect('24–32/32')
+        t.send('\x1b[H')
+        t.expect('1–9/32')
+        t.send('\x1b')
+        t.expect('CANCELLED')
+        t.ready()
+
+    def test_escape_clears_typed_text_before_quitting(self):
+        t = self.terminal
+        t.send('example')
+        t.expect('❯❯❯ example')
+        t.send('\x1b')
+        t.expect('esc again to quit')
+        self.assertNotIn('example', '\n'.join(''.join(row) for row in t.screen[-4:]))
+        t.send('\x1b')
+        t.expect('FIXTURE_DONE')
+
+    def test_ctrl_d_exits_an_empty_composer(self):
+        self.terminal.send('\x04')
+        self.terminal.expect('FIXTURE_DONE')
+
     def test_results_are_regular_text_without_tab_or_mouse_modes(self):
         t = self.terminal
         t.send('show\r')
         raw = t.ready()
         output = ANSI.sub('', raw)
-        self.assertIn('1 available · 1 taken · 1 reserved · 1 inconclusive', output)
-        self.assertIn('expires Mar 2027', output)
-        self.assertIn('$11.08 first year', output)
+        self.assertIn('example.com', output)
+        self.assertIn('reg 2020-01-01  upd 2026-01-01  exp 2027-03-11', output)
+        self.assertIn('$11.08 on Porkbun', output)
         self.assertNotIn('$12.00', output)
         self.assertNotIn('Registered:', output)
         self.assertNotIn('price unavailable', output)
@@ -295,7 +422,7 @@ class TerminalTests(unittest.TestCase):
         # Final output includes every row even when the live area cannot fit it.
         t.position = len(t.output)
         t.resize(90, 6)
-        t.expect('> ')
+        t.expect('❯❯❯ ')
         t.send('show\r')
         output = ANSI.sub('', t.ready())
         self.assertIn('example.com', output)
@@ -303,10 +430,29 @@ class TerminalTests(unittest.TestCase):
         self.assertIn('example.gg', output)
         self.assertIn('example.dev', output)
 
+    def test_available_and_taken_stay_distinct_with_and_without_truecolor(self):
+        for truecolor in [False, True]:
+            with self.subTest(truecolor=truecolor):
+                t = Terminal(self.home, truecolor=truecolor)
+                try:
+                    t.send('show\r')
+                    output = t.ready()
+
+                    def style(text):
+                        match = re.search(r'\x1b\[([0-9;]+)m' + re.escape(text), output)
+                        self.assertIsNotNone(match, text)
+                        return [int(value) for value in match.group(1).split(';')]
+
+                    available, taken = style('✓'), style('✗')
+                    self.assertNotEqual(available, taken)
+                    self.assertNotEqual(style('example.com'), style('example.io'))
+                finally:
+                    t.close()
+
     def test_escape_cancels_a_pending_search_and_returns_to_prompt(self):
         t = self.terminal
         t.send('cancel\r')
-        t.expect('esc cancel')
+        t.expect('example.com')
         t.send('\t')
         t.send('\x1b')
         t.expect('CANCELLED')

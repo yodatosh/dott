@@ -62,6 +62,7 @@ registry_catalog! {
     ("in", 29, Iana, Whois::None, false),
     ("id", 30, Iana, Whois::None, false),
     ("fr", 31, Iana, Whois::None, false),
+    ("pt", 32, Iana, Standard("whois.dns.pt"), false),
 }
 
 fn registry(tld: &str) -> Option<&'static Registry> {

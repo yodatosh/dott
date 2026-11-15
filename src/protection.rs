@@ -89,7 +89,7 @@ mod tests {
                 let deadline = Instant::now() + Duration::from_secs(5);
                 let mut stream = loop {
                     match listener.accept() {
-                        Ok((stream, _)) => break stream,
+                        Ok((stream, _)) => { stream.set_nonblocking(false).unwrap(); break stream }
                         Err(error) if error.kind() == std::io::ErrorKind::WouldBlock && Instant::now() < deadline => std::thread::sleep(Duration::from_millis(5)),
                         Err(error) => panic!("protection mock: {error}"),
                     }

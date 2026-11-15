@@ -32,11 +32,11 @@ pub struct Catalog {
 }
 
 impl Catalog {
-    pub fn first_year_quote(&self, domain: &str) -> Option<String> {
+    pub fn listing_price(&self, domain: &str) -> Option<String> {
         let tld = domain.rsplit('.').next().unwrap_or("");
         self.cache.prices.get(tld).map(|price| {
             let cached = if self.now.saturating_sub(price.fetched_at) >= DAY { " · cached" } else { "" };
-            format!("${} first year{cached}", money(price.registration_cents))
+            format!("${} on Porkbun{cached}", money(price.registration_cents))
         })
     }
 

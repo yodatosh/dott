@@ -1,25 +1,35 @@
 # Changelog
 
-## Unreleased
+## 0.9.0 — 2026-11-03
 
-- Inline TUI with a framed search composer, slash suggestions above the input, responsive layout, and clean submitted queries in terminal scrollback.
-- Result rows show first-year estimates; renewal estimates remain in `/details`. The editor positions its cursor using the visible prompt width.
-- Short `.me` names show a possible-premium hint, including when prices are missing; the input prompt is a single cyan `>`.
-- Bare-name searches put exact suffix splits first (`phagy` → `pha.gy`), regardless of selected extensions; full-domain searches remain exact.
-- Added `.gy`, `.ly`, `.to`, `.is`, `.tv`, `.in`, `.id`, and `.fr`; registry routing uses a bundled IANA directory and one extension catalog.
-- Audited all 24 registries; hardened query matching, WHOIS error detection, DNS validation, and conflicting-result handling, with saved offline fixtures.
-- Typing `/` opens filtered command suggestions with arrow-key selection and argument completion.
-- Registry DPML checks prevent trademark-protected labels from appearing available; corrected the `.work` registry endpoint.
-- Added `.si`, `.click`, and `.fun` with registry RDAP and WHOIS checks.
-- Price estimates show first-year and renewal costs when they differ, using the existing cache.
-- Inconclusive checks explain registry timeouts, rate limits, and malformed replies, with a retry hint.
-- Quieter results with expiry-only dates, a complete status summary, and one pricing notice.
-- Inline search results with ordinary terminal selection and scrollback.
-- Input history, cursor editing, Ctrl+U, and editable multiline paste.
-- `/details` shows full dates; `/results` shows the last results again.
-- Persistent shortlists; `/retry` checks only inconclusive results.
-- Availability no longer waits for pricing; suggestions include later keywords and combinations.
-- Terminal searches flag newly taken names using bounded local check history.
+**New**
+- Interactive mode opens on a clean window with the logo and a prompt on the bottom row.
+  Live rows scroll with ↑/↓ and Page Up/Down when they don't fit; Esc cancels.
+  Finished results stay in normal scrollback for selecting and copying.
+- Typing `/` opens a filtered command menu; Tab completes, Enter runs it.
+- Input history, cursor editing, Ctrl+W/Ctrl+U, and editable multiline paste.
+  Esc clears typed text first, then quits.
+- `/details <domain>` (full dates, renewal estimate), `/results`, `/retry`
+  (inconclusive checks only), and saved shortlists (`/save`, `/unsave`, `/shortlist`).
+- `.si`, `.click`, `.fun`, `.gy`, `.ly`, `.to`, `.is`, `.tv`, `.in`, `.id`, `.fr`, `.pt`.
+- Bare names check exact suffix splits first (`phagy` → `pha.gy`).
+- Searches flag names that were available at your last check and are now taken.
+- Short `.me` names show a possible-premium hint.
+
+**Changed**
+- Results appear as each check finishes; pricing never delays them.
+- Rows show the Porkbun price for available names and only the expiry month for
+  taken ones.
+- Inconclusive results say why (timeout, rate limit, malformed reply).
+- Suggestions include later keywords and combinations.
+- Registry routing uses a bundled IANA RDAP directory.
+
+**Fixed**
+- Trademark-protected (DPML) `.live`, `.computer` and `.fyi` labels no longer
+  appear available.
+- Audited all 33 registries: stricter WHOIS matching and error detection, DNS
+  validation, and conflicting-result handling. Corrected the `.work` endpoint.
+- WHOIS tries IPv4 first, so networks with broken IPv6 no longer time out.
 
 ## 0.8.0 — 2026-10-02
 

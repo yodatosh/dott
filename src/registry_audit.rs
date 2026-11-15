@@ -160,7 +160,7 @@ fn response(status: &'static str, body: String, accept_header: &'static str) -> 
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         let mut stream = loop {
             match listener.accept() {
-                Ok((stream, _)) => break stream,
+                Ok((stream, _)) => { stream.set_nonblocking(false).unwrap(); break stream }
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock && std::time::Instant::now() < deadline => std::thread::sleep(Duration::from_millis(5)),
                 Err(error) => panic!("audit mock: {error}"),
             }

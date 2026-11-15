@@ -3081,6 +3081,79 @@
       ]
     },
     {
+      "tld": "pt",
+      "rdap": "",
+      "whois": "whois.dns.pt",
+      "dpml": "",
+      "iana": [],
+      "samples": [
+        {
+          "domain": "nic.pt",
+          "kind": "registry_reference",
+          "whois": {
+            "server": "whois.dns.pt",
+            "body": "Domain: nic.pt\nDomain Status: Registered\nCreation Date: 19/08/1999 00:00:00\nExpiration Date: 31/12/2026 23:59:00",
+            "raw_bytes": 678,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=nic.pt&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=nic.pt&type=NS",
+            "body": {
+              "Status": 0,
+              "Answer": [
+                {
+                  "name": "nic.pt",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "dns01.dns.pt."
+                },
+                {
+                  "name": "nic.pt",
+                  "type": 2,
+                  "TTL": 300,
+                  "data": "dns02.dns.pt."
+                }
+              ]
+            }
+          },
+          "expected": "taken",
+          "whois_expected": "taken",
+          "dns_expected": "taken"
+        },
+        {
+          "domain": "dott-audit-1793538311576999000.pt",
+          "kind": "unregistered_probe",
+          "whois": {
+            "server": "whois.dns.pt",
+            "body": "dott-audit-1793538311576999000.pt - No Match",
+            "raw_bytes": 45,
+            "empty_after_sanitizing": false
+          },
+          "dns": {
+            "url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793538311576999000.pt&type=NS",
+            "http": 200,
+            "final_url": "https://cloudflare-dns.com/dns-query?name=dott-audit-1793538311576999000.pt&type=NS",
+            "body": {
+              "Status": 3,
+              "Authority": [
+                {
+                  "name": "pt",
+                  "type": 6,
+                  "TTL": 300,
+                  "data": "curiosity.dns.pt. request.dns.pt. 2026110125 21600 7200 2592000 300"
+                }
+              ]
+            }
+          },
+          "expected": "available",
+          "whois_expected": "available",
+          "dns_expected": "unknown"
+        }
+      ]
+    },
+    {
       "tld": "sh",
       "rdap": "",
       "whois": "whois.nic.sh",

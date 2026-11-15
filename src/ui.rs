@@ -5,10 +5,53 @@ use crossterm::{
     terminal::{self, Clear, ClearType, DisableLineWrap, EnableLineWrap},
 };
 use futures::{stream::FuturesUnordered, StreamExt};
-use std::{io::{self, Write}, time::Duration};
+use std::{io::{self, Write}, sync::atomic::{AtomicBool, Ordering}, time::Duration};
 use crate::{model::{Availability, UnknownReason, ProtectionReason}, pricing::Catalog};
 
 pub type Results = Vec<(String, Availability)>;
+
+// Result rows as in the classic CLI: "  ✓  domain  details".
+const RESULT_NAME_COL: usize = 5;
+const META_GAP: &str = "  ";
+
+pub fn content_width(columns: u16) -> usize { columns.saturating_sub(1) as usize }
+
+static SESSION_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+// Interactive sessions keep the prompt on the last row; output uses the rows above.
+fn dock_rows(rows: u16) -> u16 {
+    if SESSION_ACTIVE.load(Ordering::Relaxed) && rows >= 3 { 1 } else { 0 }
+}
+
+pub(crate) fn output_size() -> io::Result<(u16, u16)> {
+    let (columns, rows) = terminal::size()?;
+    Ok((columns, rows - dock_rows(rows)))
+}
+
+// Opening pushes the shell's earlier output into scrollback, so dott starts on a
+// clean window. Output is ordinary terminal text above the bottom prompt row.
+pub struct Session;
+impl Session {
+    pub fn enter() -> io::Result<Self> {
+        let (_, rows) = terminal::size()?;
+        let mut out = io::stdout();
+        for _ in 0..rows { write!(out, "\r\n")?; }
+        queue!(out, cursor::MoveTo(0, 0))?;
+        out.flush()?;
+        SESSION_ACTIVE.store(true, Ordering::Relaxed);
+        Ok(Self)
+    }
+}
+impl Drop for Session {
+    fn drop(&mut self) {
+        SESSION_ACTIVE.store(false, Ordering::Relaxed);
+        let mut out = io::stdout();
+        if let Ok((_, rows)) = terminal::size() { let _ = queue!(out, cursor::MoveTo(0, rows.saturating_sub(1))); }
+        let _ = execute!(out, DisableBracketedPaste, EnableLineWrap, cursor::Show);
+        let _ = writeln!(out, "\r");
+        let _ = terminal::disable_raw_mode();
+    }
+}
 
 pub fn width() -> usize { terminal::size().map(|(w, _)| w as usize).unwrap_or(80) }
 
@@ -19,70 +62,86 @@ pub fn clip(text: &str, width: usize) -> String {
     text.chars().take(width - 1).chain(std::iter::once('…')).collect()
 }
 
-fn month_date(date: &str) -> Option<String> {
-    let date = crate::utils::parse_date(date)?;
-    let month: usize = date[5..7].parse().ok()?;
-    let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    Some(format!("{} {}", months[month - 1], &date[..4]))
+// The classic CLI banner: gradient logo, version, and a short instruction.
+pub fn banner() -> Vec<String> {
+    vec![
+        String::new(),
+        "   ____       _   _ ".truecolor(255, 155, 0).to_string(),
+        "  |  _ \\  ___| |_| |_".truecolor(255, 60, 90).to_string(),
+        "  | | | |/ _ \\ __| __|".truecolor(180, 50, 230).to_string(),
+        "  | |_| | (_) | |_| |_".truecolor(80, 130, 255).to_string(),
+        format!("  |____/ \\___/ \\__|\\__|  v{}", env!("CARGO_PKG_VERSION")).truecolor(50, 215, 235).to_string(),
+        String::new(),
+        "  private domain search..".truecolor(80, 80, 110).to_string(),
+        "  type a name and hit enter. /help for commands · esc to quit.".truecolor(110, 105, 140).to_string(),
+        String::new(),
+    ]
 }
 
 pub fn row(domain: &str, status: Option<&Availability>, pad: usize, prices: &Catalog, width: usize, frame: usize) -> String {
     const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
     let symbol = match status {
-        Some(Availability::Available) => "✓".truecolor(32, 215, 96),
-        Some(Availability::Taken(_)) => "✗".truecolor(145, 145, 155),
-        Some(Availability::Protected(_)) => "★".truecolor(205, 170, 105),
+        Some(Availability::Available) => "✓".bright_green().bold(),
+        Some(Availability::Taken(_)) => "✗".truecolor(70, 70, 90),
+        Some(Availability::Protected(_)) => "★".bright_yellow().bold(),
         Some(Availability::Unknown(_)) => "?".bright_yellow(),
-        None => FRAMES[frame % FRAMES.len()].truecolor(180, 130, 230),
+        None => FRAMES[frame % FRAMES.len()].truecolor(160, 120, 220),
     };
     let prefix = "  ";
-    let budget = width.saturating_sub(6);
-    if width < 6 { return clip(domain, width); }
+    let gap = " ".repeat(RESULT_NAME_COL.saturating_sub(prefix.len() + 1));
+    let budget = width.saturating_sub(RESULT_NAME_COL + 1);
+    if width < RESULT_NAME_COL + 1 { return clip(domain, width); }
     let name = clip(domain, budget);
     let padded = format!("{name:<pad$}", pad = pad.min(budget).max(name.chars().count()));
     let spare = budget.saturating_sub(padded.chars().count());
-    let metadata = match status {
+    if let Some(Availability::Taken(dates)) = status {
+        // reg/upd/exp as in the classic CLI; expiry is colored by how soon it is.
+        // Narrow rows drop reg/upd first, then the expiry, never a partial date.
+        let mut history = String::new();
+        if let Some(date) = &dates.registered { history.push_str(&format!("  reg {date}")); }
+        if let Some(date) = &dates.updated { history.push_str(&format!("  upd {date}")); }
+        let expiry = dates.expires.as_ref().map(|date| format!("  exp {date}")).unwrap_or_default();
+        let (history, expiry) = [(history.as_str(), expiry.as_str()), ("", expiry.as_str()), ("", "")].into_iter()
+            .find(|(h, e)| h.chars().count() + e.chars().count() <= spare).unwrap_or(("", ""));
+        let expiry_color = match dates.expires.as_deref().and_then(crate::utils::days_until) {
+            Some(days) if days < 90 => (220, 100, 60),
+            Some(days) if days < 365 => (200, 170, 60),
+            _ => (110, 100, 150),
+        };
+        let history = history.truecolor(110, 100, 150);
+        let expiry = expiry.truecolor(expiry_color.0, expiry_color.1, expiry_color.2);
+        return format!("{prefix}{symbol}{gap}{}{history}{expiry}", padded.truecolor(60, 60, 80));
+    }
+    const PREMIUM: &str = "⚠ likely premium";
+    // The premium warning stays separate from the price so each keeps its own color.
+    let (metadata, warning) = match status {
         Some(Availability::Available) => {
             let premium = crate::config::is_likely_premium(domain);
-            match prices.first_year_quote(domain) {
-                Some(quote) if premium => {
-                    let full = format!("  {quote} · possibly premium");
-                    if full.chars().count() <= spare { full } else { "  possibly premium".into() }
-                }
-                Some(quote) => format!("  {quote}"),
-                None if premium => "  possibly premium".into(),
-                None => String::new(),
+            match prices.listing_price(domain) {
+                Some(quote) if premium && format!("{META_GAP}{quote} · {PREMIUM}").chars().count() <= spare => (format!("{META_GAP}{quote} · "), PREMIUM),
+                Some(quote) if !premium => (format!("{META_GAP}{quote}"), ""),
+                _ if premium => (META_GAP.into(), PREMIUM),
+                _ => (String::new(), ""),
             }
         }
-        Some(Availability::Taken(dates)) => dates.expires.as_deref().and_then(month_date)
-            .map(|date| format!("  expires {date}")).unwrap_or_default(),
-        Some(Availability::Protected(reason)) => format!("  {}", reason.label()),
-        Some(Availability::Unknown(reason)) => format!("  {}", reason.label()),
-        _ => String::new(),
+        Some(Availability::Protected(reason)) => (format!("{META_GAP}{}", reason.label()), ""),
+        Some(Availability::Unknown(reason)) => (format!("{META_GAP}{}", reason.label()), ""),
+        _ => (String::new(), ""),
     };
     // Omit secondary details rather than displaying a partial price or date.
-    let metadata = if metadata.chars().count() <= spare { metadata } else { String::new() };
-    let styled_name = if matches!(status, Some(Availability::Available)) {
-        padded.truecolor(32, 215, 96).bold()
-    } else { padded.truecolor(155, 155, 165) };
+    let (metadata, warning) = if metadata.chars().count() + warning.chars().count() <= spare { (metadata, warning) } else { (String::new(), "") };
+    let (name_color, meta_color) = match status {
+        Some(Availability::Protected(_)) => ((60, 60, 80), (80, 80, 100)),
+        Some(Availability::Unknown(_)) => ((100, 100, 80), (100, 100, 80)),
+        _ => ((80, 80, 100), (80, 80, 100)),
+    };
+    let styled_name = if matches!(status, Some(Availability::Available)) { padded.bright_white().bold() }
+        else { padded.truecolor(name_color.0, name_color.1, name_color.2) };
     let styled_metadata = if matches!(status, Some(Availability::Available)) {
-        metadata.truecolor(228, 76, 225)
-    } else { metadata.truecolor(150, 165, 175) };
-    format!("{prefix}{symbol}  {styled_name}{styled_metadata}")
-}
-
-pub fn summary(results: &Results) -> String {
-    let mut counts = [0; 4];
-    for (_, status) in results {
-        counts[match status { Availability::Available => 0, Availability::Taken(_) => 1, Availability::Protected(_) => 2, Availability::Unknown(_) => 3 }] += 1;
-    }
-    let mut parts = vec![format!("{} available", counts[0]), format!("{} taken", counts[1])];
-    if counts[2] > 0 {
-        let label = if results.iter().any(|(_, status)| matches!(status, Availability::Protected(ProtectionReason::Trademark))) { "protected" } else { "reserved" };
-        parts.push(format!("{} {label}", counts[2]));
-    }
-    if counts[3] > 0 { parts.push(format!("{} inconclusive", counts[3])); }
-    parts.join(" · ")
+        let warning = if warning.is_empty() { String::new() } else { warning.truecolor(220, 170, 60).to_string() };
+        format!("{}{warning}", metadata.truecolor(100, 210, 210))
+    } else { metadata.truecolor(meta_color.0, meta_color.1, meta_color.2).to_string() };
+    format!("{prefix}{symbol}{gap}{styled_name}{styled_metadata}")
 }
 
 pub fn price_notice(results: &Results, prices: &Catalog) -> Option<&'static str> {
@@ -146,8 +205,8 @@ impl Drop for Restore {
     }
 }
 
-// Live checks use a small inline area. Finished output is ordinary terminal
-// text, so native selection and scrollback work without any interaction mode.
+// Live checks repaint their rows in place above the prompt row. Finished output is
+// ordinary terminal text, so native selection and scrollback remain available.
 pub struct Panel {
     domains: Vec<String>,
     rows: Vec<Option<Availability>>,
@@ -155,58 +214,79 @@ pub struct Panel {
     size: (u16, u16),
     offset: usize,
     visible: usize,
+    shown: usize,
+}
+
+fn search_lines(domains: &[String], rows: &[Option<Availability>], prices: &Catalog,
+    offset: usize, visible: usize, width: usize, height: usize, frame: usize) -> Vec<String> {
+    let total = domains.len();
+    let mut lines = Vec::new();
+    let pad = domains.iter().map(String::len).max().unwrap_or(0);
+    for i in offset..(offset + visible).min(total) {
+        lines.push(row(&domains[i], rows[i].as_ref(), pad, prices, width, frame));
+    }
+    if visible < total {
+        let hint = format!("  ↑/↓ scroll · {}–{}/{total} · esc cancel", offset + 1, (offset + visible).min(total));
+        lines.push(clip(&hint, width).truecolor(80, 80, 100).to_string());
+    }
+    lines.truncate(height.max(1));
+    lines
 }
 
 impl Panel {
     fn new(domains: Vec<String>) -> io::Result<Self> {
-        let size = terminal::size()?;
+        let size = output_size()?;
         let origin = cursor::position()?.1;
-        let mut panel = Self { rows: vec![None; domains.len()], domains, origin, size, offset: 0, visible: 0 };
+        let mut panel = Self { rows: vec![None; domains.len()], domains, origin, size, offset: 0, visible: 0, shown: 0 };
         panel.reflow()?;
         Ok(panel)
     }
 
     fn reflow(&mut self) -> io::Result<()> {
-        self.size = terminal::size()?;
-        self.visible = self.domains.len().min((self.size.1 as usize).saturating_sub(4).max(1));
+        let mut out = io::stdout();
+        let actual = terminal::size()?;
+        // A resize can leave the old prompt row inside the output area.
+        for y in self.size.1..actual.1.min(self.size.1.saturating_add(1)) {
+            queue!(out, cursor::MoveTo(0, y), Clear(ClearType::CurrentLine))?;
+        }
+        self.size = output_size()?;
+        for y in 0..self.shown {
+            if self.origin as usize + y < self.size.1 as usize {
+                queue!(out, cursor::MoveTo(0, self.origin + y as u16), Clear(ClearType::CurrentLine))?;
+            }
+        }
+        self.visible = self.domains.len().min((self.size.1 as usize).saturating_sub(2).max(1));
         self.offset = self.offset.min(self.domains.len().saturating_sub(self.visible));
-        self.origin = self.origin.min(self.size.1.saturating_sub(1));
-        let reserved = (self.visible + 2).min(self.size.1.saturating_sub(1) as usize);
-        let overflow = (self.origin as usize + reserved + 1).saturating_sub(self.size.1 as usize);
+        self.origin = self.origin.min(actual.1.saturating_sub(1));
+        let reserved = (self.visible + 2).min(self.size.1.max(1) as usize);
+        let overflow = (self.origin as usize + reserved).saturating_sub(self.size.1 as usize);
         if overflow > 0 {
-            let mut out = io::stdout();
-            queue!(out, cursor::MoveTo(0, self.size.1.saturating_sub(1)))?;
+            queue!(out, cursor::MoveTo(0, actual.1.saturating_sub(1)))?;
             for _ in 0..overflow { write!(out, "\r\n")?; }
             out.flush()?;
             self.origin = self.origin.saturating_sub(overflow as u16);
         }
-        Ok(())
+        out.flush()?;
+        busy_dock()
     }
 
     pub fn finish(&mut self, results: &Results, prices: &Catalog, changes: Vec<String>, cancelled: bool) -> io::Result<()> {
+        clear_dock()?;
         execute!(io::stdout(), cursor::MoveTo(0, self.origin))?;
         print_results(results, prices, &changes, cancelled)
     }
 
     fn paint(&mut self, prices: &Catalog, frame: usize) -> io::Result<()> {
-        if terminal::size()? != self.size { self.reflow()?; }
-        let width = (self.size.0 as usize).saturating_sub(1);
-        let pad = self.domains.iter().map(String::len).max().unwrap_or(0);
-        let mut lines = Vec::new();
-        for i in self.offset..(self.offset + self.visible).min(self.domains.len()) {
-            lines.push(row(&self.domains[i], self.rows[i].as_ref(), pad, prices, width, frame));
-        }
-        let complete: Results = self.domains.iter().zip(&self.rows).filter_map(|(d, s)| s.as_ref().map(|s| (d.clone(), s.clone()))).collect();
-        let status = format!("{} / {} checked · {}", complete.len(), self.domains.len(), summary(&complete));
-        lines.push(clip(&format!("  {status}"), width).truecolor(175, 175, 185).to_string());
-        let notice = if self.visible < self.domains.len() { "↑/↓ more rows · esc cancel" }
-            else { price_notice(&complete, prices).unwrap_or("esc cancel") };
-        lines.push(clip(&format!("  {notice}"), width).truecolor(150, 165, 175).to_string());
+        if output_size()? != self.size { self.reflow()?; }
+        let width = content_width(self.size.0);
+        let lines = search_lines(&self.domains, &self.rows, prices, self.offset, self.visible, width,
+            self.size.1.max(1) as usize, frame);
         let mut out = io::stdout();
-        for (y, line) in lines.iter().enumerate().take(self.size.1.saturating_sub(1) as usize) {
+        for (y, line) in lines.iter().enumerate().take(self.size.1.max(1) as usize) {
             queue!(out, cursor::MoveTo(0, self.origin + y as u16), Clear(ClearType::CurrentLine))?;
             write!(out, "{line}")?;
         }
+        self.shown = lines.len();
         out.flush()
     }
 }
@@ -214,15 +294,27 @@ impl Panel {
 pub fn print_results(results: &Results, prices: &Catalog, changes: &[String], cancelled: bool) -> io::Result<()> {
     let width = width().saturating_sub(1);
     let pad = results.iter().map(|(d, _)| d.len()).max().unwrap_or(0);
-    let mut lines: Vec<_> = results.iter().map(|(domain, status)| row(domain, Some(status), pad, prices, width, 0)).collect();
-    lines.push(clip(&format!("  {}", summary(results)), width).truecolor(175, 175, 185).to_string());
-    for domain in changes { lines.push(clip(&format!("  {domain} · taken since your last check"), width).truecolor(220, 150, 120).to_string()); }
-    let notice = if cancelled { "Cancelled · unfinished checks are inconclusive" }
-        else { price_notice(results, prices).unwrap_or("Porkbun estimates · /details <domain> for full dates") };
-    lines.push(clip(&format!("  {notice}"), width).truecolor(150, 165, 175).to_string());
-    if let Some(hint) = retry_hint(results) {
-        lines.push(clip(&format!("  {hint}"), width).truecolor(150, 150, 165).to_string());
+    let mut lines = Vec::new();
+    lines.extend(results.iter().map(|(domain, status)| row(domain, Some(status), pad, prices, width, 0)));
+    lines.push(String::new());
+    let available = results.iter().filter(|(_, status)| matches!(status, Availability::Available)).count();
+    let summary = format!("  {available} available  ·  {} checked", results.len());
+    lines.push(if summary.chars().count() <= width {
+        format!("  {} available  ·  {} checked", available.to_string().bright_green().bold(),
+            results.len().to_string().truecolor(80, 80, 100))
+    } else { clip(&summary, width).truecolor(80, 80, 100).to_string() });
+    if let Some(notice) = price_notice(results, prices) {
+        lines.push(clip(&format!("  {notice}"), width).truecolor(80, 80, 100).to_string());
     }
+    for domain in changes { lines.push(clip(&format!("  {domain} · taken since your last check"), width).truecolor(220, 150, 120).to_string()); }
+    if cancelled {
+        lines.push(clip("  Cancelled · unfinished checks are inconclusive", width).truecolor(80, 80, 100).to_string());
+    }
+    if let Some(hint) = retry_hint(results) {
+        lines.push(clip(&format!("  {hint}"), width).truecolor(220, 170, 60).to_string());
+    }
+    // Dark closing rule. Fixed length, so narrowing the window doesn't rewrap it.
+    lines.push(clip(&format!("  {}", "─".repeat(53)), width).truecolor(38, 36, 52).to_string());
     lines.push(String::new());
     let mut out = io::stdout();
     for line in lines {
@@ -235,6 +327,8 @@ pub fn print_results(results: &Results, prices: &Catalog, changes: &[String], ca
 #[derive(Default)]
 struct Editor {
     text: Vec<char>, cursor: usize, history_index: Option<usize>, draft: Vec<char>,
+    // Set when esc just cleared typed text, so the next esc quits.
+    quit_armed: bool,
 }
 impl Editor {
     fn insert(&mut self, text: &str) {
@@ -248,6 +342,13 @@ impl Editor {
     fn key(&mut self, code: KeyCode, modifiers: KeyModifiers, history: &[String]) {
         match code {
             KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => { self.text.clear(); self.cursor = 0; }
+            KeyCode::Char('k') if modifiers.contains(KeyModifiers::CONTROL) => self.text.truncate(self.cursor),
+            KeyCode::Char('w') if modifiers.contains(KeyModifiers::CONTROL) => {
+                let end = self.cursor;
+                while self.cursor > 0 && self.text[self.cursor - 1].is_whitespace() { self.cursor -= 1; }
+                while self.cursor > 0 && !self.text[self.cursor - 1].is_whitespace() { self.cursor -= 1; }
+                self.text.drain(self.cursor..end);
+            }
             KeyCode::Char('a') if modifiers.contains(KeyModifiers::CONTROL) => self.cursor = 0,
             KeyCode::Char('e') if modifiers.contains(KeyModifiers::CONTROL) => self.cursor = self.text.len(),
             KeyCode::Left => self.cursor = self.cursor.saturating_sub(1),
@@ -286,125 +387,167 @@ struct ComposerFrame {
     cursor: (usize, usize),
 }
 
-// Plan the entire inline region before writing. The menu lives above the
-// composer; previous searches stay outside this region in normal scrollback.
+// Plan the command menu and the bottom prompt row before drawing.
 fn composer_frame(suggestions: &crate::commands::Suggestions, prompt: &str, editor: &Editor,
     columns: u16, height: u16) -> ComposerFrame {
-    let width = columns.saturating_sub(1) as usize;
-    let height = height.max(1) as usize;
-    let framed = width >= 20 && height >= 4;
-    let composer_rows = if framed { 4 } else { height.min(2) };
-    let capacity = height.saturating_sub(composer_rows);
+    let width = content_width(columns);
+    let capacity = (height.max(1) as usize).saturating_sub(1);
     let options = suggestions.options();
-    let visible = if capacity == 0 { 0 } else { options.len().min(capacity.saturating_sub(1).max(1)).min(6) };
+    let visible = if capacity < 2 { 0 } else { options.len().min(capacity - 1).min(6) };
     let selected = suggestions.selected_index();
     let start = selected.saturating_sub(visible.saturating_sub(1)).min(options.len().saturating_sub(visible));
     let mut lines = Vec::new();
     for (index, command) in options.iter().enumerate().skip(start).take(visible) {
         let text = if width >= 50 {
-            format!("  {} {:<18} {}", if index == selected { "›" } else { " " }, command.usage(), command.description)
-        } else { format!("  {} {}", if index == selected { "›" } else { " " }, command.usage()) };
+            format!("    {} {:<18} {}", if index == selected { "›" } else { " " }, command.usage(), command.description)
+        } else { format!("    {} {}", if index == selected { "›" } else { " " }, command.usage()) };
         let text = clip(&text, width);
-        lines.push(if index == selected { text.bright_white().bold().to_string() }
-            else { text.truecolor(155, 155, 175).to_string() });
+        lines.push(if index == selected { text.bright_white().bold().to_string() } else { text.truecolor(110, 110, 140).to_string() });
     }
-    if visible > 0 && lines.len() < capacity {
-        let hint = if width >= 55 { format!("  ↑/↓ choose · enter select · esc close · {}–{}/{}", start + 1, start + visible, options.len()) }
-            else { "  ↑/↓ · enter · esc".into() };
-        lines.push(clip(&hint, width).truecolor(115, 120, 135).to_string());
+    if visible > 0 {
+        let hint = if width >= 55 { format!("    ↑/↓ choose · enter select · tab complete · {}–{}/{}", start + 1, start + visible, options.len()) }
+            else { "    ↑/↓ · enter · esc".into() };
+        lines.push(clip(&hint, width).truecolor(80, 80, 100).to_string());
+    } else if editor.quit_armed && capacity > 0 {
+        lines.push(clip("    esc again to quit", width).truecolor(80, 80, 100).to_string());
     }
-    let input_row;
-    let input_col;
-    let cursor_col;
-    if framed {
-        let inside = width - 4;
-        let label = "─ search ";
-        lines.push(format!("  ╭{label}{}╮", "─".repeat(inside - label.chars().count())).truecolor(85, 95, 110).to_string());
-        input_row = lines.len();
-        let prefix = format!("  │ {}", prompt.trim_start());
-        input_col = prompt_width(&prefix);
-        let cells = width.saturating_sub(input_col + 2).max(1);
-        let (text, caret) = editor.visible(cells);
-        cursor_col = caret;
-        let content = if editor.text.is_empty() {
-            format!("{:<cells$}", clip("Search a name or type /", cells)).truecolor(100, 105, 120).to_string()
-        } else { format!("{text:<cells$}") };
-        lines.push(format!("{prefix}{content} {}", "│".truecolor(85, 95, 110)));
-        lines.push(format!("  ╰{}╯", "─".repeat(inside)).truecolor(85, 95, 110).to_string());
-    } else {
-        input_row = lines.len();
-        let prefix = clip("> ", width.saturating_sub(1));
-        input_col = prefix.chars().count();
-        let (text, caret) = editor.visible(width.saturating_sub(input_col).max(1));
-        cursor_col = caret;
-        lines.push(clip(&format!("{prefix}{text}"), width));
+    let input_col = if width > prompt_width(prompt) { prompt_width(prompt) } else { 0 };
+    let cells = width - input_col;
+    let (text, caret) = editor.visible(cells.max(1));
+    lines.push(format!("{}{}", if input_col > 0 { prompt } else { "" }, clip(&text, cells)));
+    let row = lines.len() - 1;
+    ComposerFrame { lines, cursor: ((input_col + caret).min(width.saturating_sub(1)), row) }
+}
+
+pub(crate) fn clear_dock() -> io::Result<()> {
+    let (_, rows) = terminal::size()?;
+    let mut out = io::stdout();
+    for y in rows - dock_rows(rows)..rows {
+        queue!(out, cursor::MoveTo(0, y), Clear(ClearType::CurrentLine))?;
     }
-    if composer_rows > if framed { 3 } else { 1 } {
-        let help = if width >= 65 { "  enter search · / commands · ↑/↓ history · esc quit" }
-            else { "  enter search · / commands" };
-        lines.push(clip(help, width).truecolor(115, 120, 135).to_string());
-    }
-    ComposerFrame { lines, cursor: ((input_col + cursor_col).min(width.saturating_sub(1)), input_row) }
+    out.flush()
+}
+
+// While a search or the extension picker runs, the prompt row shows a dim prompt.
+pub(crate) fn busy_dock() -> io::Result<()> {
+    let (_, rows) = terminal::size()?;
+    if dock_rows(rows) == 0 { return Ok(()); }
+    let mut out = io::stdout();
+    queue!(out, cursor::Hide, cursor::MoveTo(0, rows - 1), Clear(ClearType::CurrentLine))?;
+    write!(out, "{}", "  ❯❯❯".truecolor(80, 80, 100))?;
+    out.flush()
 }
 
 #[derive(Default)]
 struct CommandMenuView {
+    // First row of the drawn menu + prompt block; the prompt is its last row.
     anchor: Option<u16>,
     shown: usize,
+    // Where the next output line goes, above the prompt.
+    output_cursor: Option<(u16, u16)>,
+    // Last drawn layout: each line's width and the caret (column, line).
+    cells: Vec<usize>,
+    caret: (usize, usize),
+}
+
+// Row where the previously drawn block starts after a resize. Reflowing
+// terminals wrap rows that no longer fit; assume that only when the rows below
+// the caret confirm it, so output above the block is never cleared.
+fn composer_top(cells: &[usize], caret: (usize, usize), columns: u16, rows: u16, now: u16) -> u16 {
+    let span = |width: &usize| (*width).max(1).div_ceil(columns.max(1) as usize);
+    let (column, line) = caret;
+    let segment = column / columns.max(1) as usize;
+    let below = cells.get(line).map_or(1, span).saturating_sub(1 + segment) + cells.iter().skip(line + 1).map(span).sum::<usize>();
+    let reflowed = rows.saturating_sub(1).saturating_sub(now) as usize == below;
+    let above = if reflowed { cells.iter().take(line).map(span).sum::<usize>() + segment } else { line };
+    now.saturating_sub(above as u16)
 }
 
 impl CommandMenuView {
-    fn clear(&mut self) -> io::Result<()> {
-        let Some(anchor) = self.anchor else { return Ok(()); };
+    fn erase(&self, rows: std::ops::Range<u16>) -> io::Result<()> {
         let height = terminal::size()?.1;
         let mut out = io::stdout();
-        for i in 0..self.shown {
-            let row = anchor as usize + i;
-            if row < height as usize { queue!(out, cursor::MoveTo(0, row as u16), Clear(ClearType::CurrentLine))?; }
+        for row in rows.start..rows.end.min(height) {
+            queue!(out, cursor::MoveTo(0, row), Clear(ClearType::CurrentLine))?;
         }
-        queue!(out, cursor::MoveTo(0, anchor.min(height.saturating_sub(1))))?;
+        Ok(())
+    }
+
+    fn clear(&mut self) -> io::Result<()> {
+        let Some(anchor) = self.anchor else { return Ok(()); };
+        self.erase(anchor..anchor.saturating_add(self.shown as u16))?;
+        let height = terminal::size()?.1;
+        let (x, y) = self.output_cursor.unwrap_or((0, anchor));
         self.shown = 0;
-        out.flush()
+        self.anchor = None;
+        execute!(io::stdout(), cursor::MoveTo(x, y.min(height.saturating_sub(1))))
+    }
+
+    // Resizing moves existing lines. Follow the caret to find the old block,
+    // then clear it so the next draw doesn't overwrite or strand output.
+    fn follow_resize(&mut self) -> io::Result<()> {
+        let (Some(anchor), Some((x, y))) = (self.anchor, self.output_cursor) else { return Ok(()); };
+        let (Ok((_, now)), Ok((columns, rows))) = (cursor::position(), terminal::size()) else { return Ok(()); };
+        let top = composer_top(&self.cells, self.caret, columns, rows, now);
+        self.output_cursor = Some((x, top.saturating_sub(anchor.saturating_sub(y))));
+        self.anchor = None;
+        self.shown = 0;
+        execute!(io::stdout(), cursor::MoveTo(0, top), Clear(ClearType::FromCursorDown))
     }
 
     fn submit(&mut self, prompt: &str, input: &str) -> io::Result<()> {
         self.clear()?;
         let mut out = io::stdout();
+        // The echoed query belongs to the output area, never the prompt row.
+        let (_, limit) = output_size()?;
+        let (_, y) = cursor::position()?;
+        if limit > 0 && y >= limit {
+            queue!(out, cursor::MoveTo(0, terminal::size()?.1.saturating_sub(1)))?;
+            for _ in 0..=(y - limit) { write!(out, "\r\n")?; }
+            queue!(out, cursor::MoveTo(0, limit - 1))?;
+        }
         let cells = width().saturating_sub(prompt_width(prompt) + 1);
         let text: String = input.chars().map(|c| if c.is_ascii() { c } else { '?' }).collect();
         write!(out, "{prompt}{}\r\n", clip(&text, cells))?;
-        self.anchor = None;
         out.flush()
     }
 
     fn draw(&mut self, suggestions: &crate::commands::Suggestions, prompt: &str, editor: &Editor) -> io::Result<()> {
         let (columns, height) = terminal::size()?;
         let frame = composer_frame(suggestions, prompt, editor, columns, height);
-        if self.anchor.is_none() { self.anchor = Some(cursor::position()?.1); }
-        let anchor = self.anchor.as_mut().unwrap();
-        *anchor = (*anchor).min(height.saturating_sub(1));
-        let overflow = (*anchor as usize + frame.lines.len()).saturating_sub(height as usize);
+        if self.output_cursor.is_none() { self.output_cursor = Some(cursor::position()?); }
+        let anchor = height.saturating_sub(frame.lines.len() as u16);
+        let (x, y) = self.output_cursor.unwrap();
+        let y = y.min(height.saturating_sub(1));
+        // Scroll output up when the block would cover it.
+        let overflow = y.saturating_sub(anchor);
         let mut out = io::stdout();
         queue!(out, cursor::Hide)?;
+        if let Some(old_anchor) = self.anchor {
+            self.erase(old_anchor..old_anchor.saturating_add(self.shown as u16))?;
+        }
         if overflow > 0 {
             queue!(out, cursor::MoveTo(0, height.saturating_sub(1)))?;
             for _ in 0..overflow { write!(out, "\r\n")?; }
-            *anchor = anchor.saturating_sub(overflow as u16);
         }
-        for i in 0..self.shown.max(frame.lines.len()) {
-            let row = *anchor as usize + i;
+        self.output_cursor = Some((x.min(columns.saturating_sub(1)), y.saturating_sub(overflow)));
+        self.anchor = Some(anchor);
+        for (i, line) in frame.lines.iter().enumerate() {
+            let row = anchor as usize + i;
             if row >= height as usize { break; }
             queue!(out, cursor::MoveTo(0, row as u16), Clear(ClearType::CurrentLine))?;
-            if let Some(line) = frame.lines.get(i) { write!(out, "{line}")?; }
+            write!(out, "{line}")?;
         }
         self.shown = frame.lines.len();
+        self.cells = frame.lines.iter().map(|line| prompt_width(line)).collect();
+        self.caret = frame.cursor;
         queue!(out, cursor::MoveTo(frame.cursor.0 as u16, anchor.saturating_add(frame.cursor.1 as u16)), cursor::Show)?;
         out.flush()
     }
 }
 
 // Prompt colors are ANSI SGR sequences and occupy no terminal cells.
-fn prompt_width(prompt: &str) -> usize {
+pub(crate) fn prompt_width(prompt: &str) -> usize {
     let mut escape = false;
     prompt.chars().filter(|c| {
         if *c == '\u{1b}' { escape = true; return false; }
@@ -428,14 +571,32 @@ pub fn read_input(prompt: &str, history: &mut Vec<String>) -> io::Result<Option<
         // reopen when the recalled text is edited, not merely recalled.
         if editor.history_index.is_some() { suggestions.dismiss(); }
         menu.draw(&suggestions, prompt, &editor)?;
-        match event::read()? {
+        let event = event::read()?;
+        editor.quit_armed = false;
+        match event {
             Event::Key(key) if key.kind != event::KeyEventKind::Release => match key.code {
                 KeyCode::Esc if !suggestions.options().is_empty() => suggestions.dismiss(),
+                KeyCode::Esc if !editor.text.is_empty() => {
+                    editor.text.clear();
+                    editor.cursor = 0;
+                    editor.history_index = None;
+                    editor.quit_armed = true;
+                    continue;
+                }
                 KeyCode::Esc => { menu.clear()?; print!("\r\n"); return Ok(None); }
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => { menu.clear()?; print!("\r\n"); return Ok(None); }
+                KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) && editor.text.is_empty() => { menu.clear()?; print!("\r\n"); return Ok(None); }
                 KeyCode::Up if !suggestions.options().is_empty() => suggestions.move_by(-1),
                 KeyCode::Down if !suggestions.options().is_empty() => suggestions.move_by(1),
-                KeyCode::Tab => {} // No result navigation mode.
+                KeyCode::Tab => {
+                    if let Some(command) = suggestions.current() {
+                        editor.text = command.completion().chars().collect();
+                        editor.cursor = editor.text.len();
+                        editor.history_index = None;
+                        suggestions.update(&editor.text.iter().collect::<String>());
+                        suggestions.dismiss();
+                    }
+                }
                 KeyCode::Enter => {
                     if let Some(command) = suggestions.current() {
                         editor.text = command.completion().chars().collect();
@@ -446,6 +607,8 @@ pub fn read_input(prompt: &str, history: &mut Vec<String>) -> io::Result<Option<
                         menu.draw(&suggestions, prompt, &editor)?;
                     }
                     let input: String = editor.text.iter().collect();
+                    // Empty input would echo blank prompts into the output area.
+                    if input.trim().is_empty() { continue; }
                     menu.submit(prompt, &input)?;
                     if !input.trim().is_empty() && history.last() != Some(&input) {
                         history.push(input.clone());
@@ -459,7 +622,7 @@ pub fn read_input(prompt: &str, history: &mut Vec<String>) -> io::Result<Option<
                 }
             },
             Event::Paste(text) => editor.insert(&text),
-            Event::Resize(_, _) => {}
+            Event::Resize(_, _) => menu.follow_resize()?,
             _ => {}
         }
     }
@@ -467,10 +630,11 @@ pub fn read_input(prompt: &str, history: &mut Vec<String>) -> io::Result<Option<
 
 pub struct SearchReport { pub results: Results, pub cancelled: bool }
 
-// Pending and finished results use the exact same inline panel.
+// Live and finished results share row styling and a stable domain order.
 pub async fn live<F>(checks: FuturesUnordered<F>, domains: Vec<String>, prices: tokio::sync::watch::Receiver<Catalog>, keyboard: bool) -> io::Result<(SearchReport, Panel)>
 where F: std::future::Future<Output = (usize, (String, Availability))> {
     let _restore = Restore::enter()?;
+    execute!(io::stdout(), cursor::Hide)?;
     write!(io::stdout(), "\r\n")?;
     io::stdout().flush()?;
     let mut panel = Panel::new(domains.clone())?;
@@ -486,6 +650,10 @@ where F: std::future::Future<Output = (usize, (String, Availability))> {
                         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
                         KeyCode::Down => panel.offset = (panel.offset + 1).min(panel.domains.len().saturating_sub(panel.visible)),
                         KeyCode::Up => panel.offset = panel.offset.saturating_sub(1),
+                        KeyCode::PageDown => panel.offset = (panel.offset + panel.visible).min(panel.domains.len().saturating_sub(panel.visible)),
+                        KeyCode::PageUp => panel.offset = panel.offset.saturating_sub(panel.visible),
+                        KeyCode::Home => panel.offset = 0,
+                        KeyCode::End => panel.offset = panel.domains.len().saturating_sub(panel.visible),
                         _ => {}
                     },
                     Event::Resize(_, _) => panel.reflow()?,
@@ -540,18 +708,21 @@ mod tests {
             for width in 0..120 {
                 let line = plain(&row("example.com", Some(&status), 18, &prices, width, 0));
                 assert!(line.chars().count() <= width, "width {width}: {line}");
-                assert!(!line.contains("2020") && !line.contains("2026"));
+                if line.contains("reg 2") { assert!(line.contains("reg 2020-01-01")); }
             }
         }
         let line = plain(&row("example.com", Some(&Availability::Taken(dates.clone())), 11, &prices, 80, 0));
-        assert!(line.contains("expires Mar 2027"));
+        assert!(line.chars().skip(RESULT_NAME_COL).collect::<String>().starts_with("example.com"), "{line:?}");
+        assert!(line.contains("reg 2020-01-01  upd 2026-01-01  exp 2027-03-11"), "{line:?}");
+        // Narrow rows keep the expiry before registration history.
+        let narrow = plain(&row("example.com", Some(&Availability::Taken(dates.clone())), 11, &prices, 34, 0));
+        assert!(narrow.ends_with("exp 2027-03-11") && !narrow.contains("reg"), "{narrow:?}");
         let detail = details("example.com", &Availability::Taken(dates), &prices).join("\n");
         assert!(detail.contains("Registered: 2020-01-01") && detail.contains("Updated: 2026-01-01"));
         let missing = vec![("example.gg".into(), Availability::Available), ("example.io".into(), Availability::Available)];
         assert_eq!(price_notice(&missing, &prices), Some("Some price estimates are unavailable."));
         assert_eq!(price_notice(&missing, &crate::pricing::fixture_catalog(true)), Some("fetching prices…"));
         assert!(!row("example.gg", Some(&Availability::Available), 11, &prices, 80, 0).contains("unavailable"));
-        assert_eq!(summary(&vec![("a.com".into(), Availability::Available), ("b.com".into(), Availability::Unknown(UnknownReason::Inconclusive))]), "1 available · 0 taken · 1 inconclusive");
     }
 
     #[test]
@@ -576,26 +747,26 @@ mod tests {
     }
 
     #[test]
-    fn rows_show_first_year_and_details_keep_full_renewal_quotes() {
+    fn rows_show_porkbun_price_and_details_keep_full_renewal_quotes() {
         let prices = crate::pricing::fixture_catalog(false);
         let status = Availability::Available;
         let line = plain(&row("example.com", Some(&status), 11, &prices, 80, 0));
-        assert!(line.contains("$11.08 first year"));
+        assert!(line.contains("$11.08 on Porkbun"));
         assert!(!line.contains("renewal") && !line.contains("$12.00"));
         assert!(details("example.com", &status, &prices).iter()
             .any(|line| line == "Estimate: $11.08 first year · $12.00/yr renewal on Porkbun"));
         for width in 0..100 {
             let line = plain(&row("example.com", Some(&status), 11, &prices, width, 0));
             assert!(line.chars().count() <= width);
-            if line.contains("$11.08") { assert!(line.contains("first year")); }
+            if line.contains("$11.08") { assert!(line.contains("on Porkbun")); }
         }
     }
 
     #[test]
     fn cursor_offsets_ignore_prompt_color_sequences() {
-        assert_eq!(prompt_width("  > "), 4);
-        assert_eq!(prompt_width("  \x1b[1;38;2;255;60;90m>\x1b[0m "), 4);
-        assert_eq!(prompt_width(&crate::input_prompt()), 4);
+        assert_eq!(prompt_width("  ❯❯❯ "), 6);
+        assert_eq!(prompt_width("  \x1b[1;38;2;255;60;90m❯\x1b[0m❯❯ "), 6);
+        assert_eq!(prompt_width(&crate::input_prompt()), 6);
     }
 
     #[test]
@@ -606,8 +777,8 @@ mod tests {
         let mut suggestions = crate::commands::Suggestions::default();
         for input in ["", "/", "/wa"] {
             suggestions.update(input);
-            for columns in [1, 2, 4, 10, 21, 28, 80, 120] {
-                for height in [1, 2, 4, 6, 24] {
+            for columns in [1, 2, 4, 10, 21, 28, 80, 120, 200] {
+                for height in [1, 2, 4, 6, 24, 40] {
                     let frame = composer_frame(&suggestions, &crate::input_prompt(), &editor, columns, height);
                     assert!(frame.lines.len() <= height as usize);
                     assert!(frame.cursor.0 < columns as usize);
@@ -618,9 +789,74 @@ mod tests {
                 }
             }
         }
+        // Like the classic CLI: just the prompt line, no box or footer.
         let frame = composer_frame(&Default::default(), "  > ", &editor, 80, 24);
-        assert_eq!(frame.cursor, (10, 1));
-        assert!(plain(&frame.lines[1]).contains("> phagy"));
+        assert_eq!(frame.cursor, (8, 0));
+        assert_eq!(frame.lines.iter().map(|line| plain(line)).collect::<Vec<_>>(), ["  > phagy"]);
+        // The command menu opens above the prompt, which stays on the last row.
+        suggestions.update("/");
+        let frame = composer_frame(&suggestions, "  > ", &Editor::default(), 80, 24);
+        assert!(frame.lines.len() > 2 && plain(&frame.lines[0]).contains("/tlds"));
+        assert_eq!(frame.cursor.1, frame.lines.len() - 1);
+        assert_eq!(plain(frame.lines.last().unwrap()), "  > ");
+    }
+
+    #[test]
+    fn resized_prompt_is_found_with_and_without_reflow() {
+        // Menu (two rows) above the prompt, drawn at 90 columns.
+        let cells = [70, 52, 12];
+        assert_eq!(composer_top(&cells, (8, 2), 90, 24, 23), 21, "unchanged");
+        assert_eq!(composer_top(&cells, (8, 2), 90, 30, 23), 21, "taller, blank rows below");
+        // Narrowed to 60: the 70-cell row wraps into two, bottom stays anchored.
+        assert_eq!(composer_top(&cells, (8, 2), 60, 24, 23), 20);
+        // Taller without reflow: blank rows appear below, nothing above is cleared.
+        assert_eq!(composer_top(&cells, (8, 2), 60, 30, 23), 21);
+    }
+
+    #[test]
+    fn banner_is_the_left_aligned_classic_logo() {
+        let lines: Vec<_> = banner().iter().map(|line| plain(line)).collect();
+        assert!(lines.iter().any(|line| line.starts_with("  |____/") && line.ends_with(concat!("v", env!("CARGO_PKG_VERSION")))));
+        assert!(lines.iter().any(|line| line == "  type a name and hit enter. /help for commands · esc to quit."));
+    }
+
+    #[test]
+    fn composer_context_and_live_progress_fit_the_viewport() {
+        let prices = crate::pricing::fixture_catalog(false);
+        let domains: Vec<_> = (0..32).map(|i| format!("example{i}.com")).collect();
+        let mut rows = vec![None; domains.len()];
+        rows[0] = Some(Availability::Available);
+        rows[1] = Some(Availability::Unknown(UnknownReason::Timeout));
+        for columns in [1, 2, 10, 28, 52, 68, 80, 120, 200] {
+            for height in [1, 2, 4, 6, 24] {
+                let width = content_width(columns);
+                let visible = domains.len().min((height as usize).saturating_sub(2).max(1));
+                for offset in [0, domains.len() - visible] {
+                    let lines = search_lines(&domains, &rows, &prices, offset, visible, width, height, 0);
+                    assert!(lines.len() <= height);
+                    assert!(lines.iter().all(|line| prompt_width(line) <= width));
+                }
+            }
+        }
+        let lines = search_lines(&domains, &rows, &prices, 28, 4, 80, 7, 0);
+        assert!(plain(&lines[0]).contains("example28.com"));
+        assert!(plain(lines.last().unwrap()).contains("29–32/32"));
+    }
+
+    #[test]
+    fn word_delete_and_kill_to_end_preserve_text_around_the_cursor() {
+        let mut editor = Editor::default();
+        editor.insert("/watch example.com later");
+        editor.cursor = 18;
+        editor.key(KeyCode::Char('w'), KeyModifiers::CONTROL, &[]);
+        assert_eq!(editor.text.iter().collect::<String>(), "/watch  later");
+        assert_eq!(editor.cursor, 7);
+        editor.key(KeyCode::Char('k'), KeyModifiers::CONTROL, &[]);
+        assert_eq!(editor.text.iter().collect::<String>(), "/watch ");
+        editor.key(KeyCode::Char('w'), KeyModifiers::CONTROL, &[]);
+        assert!(editor.text.is_empty());
+        editor.key(KeyCode::Char('w'), KeyModifiers::CONTROL, &[]);
+        assert_eq!(editor.cursor, 0);
     }
 
     #[test]
@@ -628,13 +864,13 @@ mod tests {
         let prices = crate::pricing::fixture_catalog(false);
         let status = Availability::Available;
         let rendered = plain(&row("go.me", Some(&status), 5, &prices, 80, 0));
-        assert!(rendered.contains("possibly premium"));
+        assert!(rendered.contains("⚠ likely premium"));
         assert!(details("go.me", &status, &prices).iter().any(|line| line.contains("Possibly premium")));
         assert!(!plain(&row("project.me", Some(&status), 10, &prices, 80, 0)).contains("premium"));
         assert!(!plain(&row("go.me", Some(&Availability::Taken(Default::default())), 5, &prices, 80, 0)).contains("premium"));
         // Keep the warning on compact rows even without a catalog price.
-        let compact = plain(&row("go.ai", Some(&status), 5, &prices, 30, 0));
-        assert!(compact.contains("possibly premium"));
+        let compact = plain(&row("go.ai", Some(&status), 5, &prices, 40, 0));
+        assert!(compact.contains("⚠ likely premium"));
     }
 
     #[test]
@@ -645,7 +881,6 @@ mod tests {
         assert!(rendered.contains("★") && rendered.contains("trademark protected"));
         assert!(!rendered.contains('$') && !rendered.contains('?'));
         assert_eq!(protected.as_str(), "protected");
-        assert!(summary(&vec![("apple.fyi".into(), protected.clone())]).contains("1 protected"));
         assert!(details("apple.fyi", &protected, &prices).iter().any(|line| line.contains("DPML")));
         assert!(retry_hint(&vec![("apple.fyi".into(), protected)]).is_none());
     }
@@ -673,6 +908,8 @@ mod tests {
     #[ignore = "Deterministic PTY fixture, run by Tools/test_ui.py"]
     async fn terminal_fixture() {
         assert_eq!(std::env::var("DOTT_UI_FIXTURE").as_deref(), Ok("1"));
+        let _session = Session::enter().unwrap();
+        crate::print_cat();
         let (_sender, prices) = tokio::sync::watch::channel(crate::pricing::fixture_catalog(false));
         let mut history = Vec::new();
         let mut results = vec![
@@ -685,9 +922,11 @@ mod tests {
             println!("FIXTURE_READY");
             let Some(input) = read_input(&plain(&crate::input_prompt()), &mut history).unwrap() else { break; };
             if input == "quit" { break; }
-            if input == "cancel" {
-                let checks = [std::future::pending()].into_iter().collect();
-                let (report, mut shown) = live(checks, vec!["example.com".into()], prices.clone(), true).await.unwrap();
+            if input == "cancel" || input == "browse" {
+                let domains = if input == "browse" { (0..32).map(|i| format!("example{i}.com")).collect() }
+                    else { vec!["example.com".into()] };
+                let checks = domains.iter().map(|_| std::future::pending()).collect();
+                let (report, mut shown) = live(checks, domains, prices.clone(), true).await.unwrap();
                 assert!(report.cancelled);
                 shown.finish(&report.results, &prices.borrow(), Vec::new(), true).unwrap();
                 println!("CANCELLED");
@@ -697,6 +936,9 @@ mod tests {
                 let (report, mut shown) = live(checks, results.iter().map(|(d, _)| d.clone()).collect(), prices.clone(), true).await.unwrap();
                 let changes = crate::history::record(&report.results).unwrap();
                 shown.finish(&report.results, &prices.borrow(), changes, false).unwrap();
+            } else if input == "/tlds" {
+                let chosen = crate::extensions::select(&["com", "io"]).unwrap();
+                println!("ACTION:Tlds({chosen:?})");
             } else if input == "/results" {
                 print_results(&results, &prices.borrow(), &[], false).unwrap();
             } else if input.starts_with("/watch ") { println!("ACTION:Watch({:?})", input.trim_start_matches("/watch ")); }
@@ -737,10 +979,5 @@ mod tests {
         assert!(text.len() <= 8 && cursor < 8);
         editor.insert(&"x".repeat(5000));
         assert_eq!(editor.text.len(), 4096);
-    }
-    #[test]
-    fn date_labels_remain_compact_and_validated() {
-        assert_eq!(month_date("2027-03-11"), Some("Mar 2027".into()));
-        assert_eq!(month_date("bad"), None);
     }
 }

@@ -113,11 +113,27 @@ async fn whois_check(name: &str, tld: &str) -> Availability {
 }
 
 async fn whois_query(addr: &str, domain: &str, tld: &str, drain_banner: bool, connect_timeout: Duration, response_timeout: Duration) -> Availability {
-    let mut stream = match tokio::time::timeout(connect_timeout, TcpStream::connect(addr)).await {
-        Ok(Ok(stream)) => stream,
+    // Prefer IPv4, then try each resolved address within one connect budget.
+    // Some networks advertise IPv6 but cannot route it, which otherwise uses
+    // the whole timeout before IPv4 is tried.
+    let mut addresses = match tokio::time::timeout(connect_timeout, tokio::net::lookup_host(addr)).await {
+        Ok(Ok(addresses)) => addresses.collect::<Vec<_>>(),
         Ok(Err(_)) => return Availability::Unknown(UnknownReason::Unreachable),
         Err(_) => return Availability::Unknown(UnknownReason::Timeout),
     };
+    addresses.sort_by_key(|address| !address.is_ipv4());
+    if addresses.is_empty() { return Availability::Unknown(UnknownReason::Unreachable); }
+    let mut stream = None;
+    let mut connect_reason = UnknownReason::Unreachable;
+    let deadline = tokio::time::Instant::now() + connect_timeout;
+    for address in addresses {
+        match tokio::time::timeout_at(deadline, TcpStream::connect(address)).await {
+            Ok(Ok(connected)) => { stream = Some(connected); break; }
+            Ok(Err(_)) => {}
+            Err(_) => { connect_reason = UnknownReason::Timeout; break; }
+        }
+    }
+    let Some(mut stream) = stream else { return Availability::Unknown(connect_reason); };
     if drain_banner {
         let mut banner = [0; 512];
         let _ = tokio::time::timeout(Duration::from_millis(300), stream.read(&mut banner)).await;
@@ -212,6 +228,7 @@ fn parse_whois_for(response: &str, tld: &str, expected: Option<&str>) -> Availab
     } else {
         let missing = no_object || lines.iter().any(|line| {
             let line = line.trim_start_matches('%').trim();
+            if tld == "pt" && line.strip_suffix(" - no match").is_some_and(|name| valid_domain(name.trim())) { return true; }
             if line == "domain not found." || line == "domain not found" { return true; }
             if tld == "gg" && line == "not found" { return true; }
             if tld == "si" && matches!(line, "no entries found for the selected source(s)." | "no entries found") { return true; }
@@ -538,22 +555,29 @@ fn print_help() {
     println!();
 }
 
+// The banner sits at the bottom, right above the prompt row, so the window
+// reads top to bottom like a terminal and results push it up as they arrive.
 fn print_cat() {
-    println!();
-    println!("  {}  {}", "dott".truecolor(64, 194, 207).bold(),
-        format!("v{} · private domain search", env!("CARGO_PKG_VERSION")).truecolor(145, 150, 165));
-    println!();
-    println!("{}", ui::clip("  Find your next name. Exact domain splits appear first.", ui::width().saturating_sub(1)).truecolor(155, 155, 175));
-    println!();
+    let banner = ui::banner();
+    let rows = crossterm::terminal::size().map_or(0, |(_, rows)| rows as usize);
+    for _ in 0..rows.saturating_sub(banner.len() + 1) { println!(); }
+    for line in banner { println!("{line}"); }
 }
 
 fn input_prompt() -> String {
-    format!("  {} ", ">".truecolor(64, 194, 207).bold())
+    format!("  {}{}{} ",
+        "❯".truecolor(255, 155, 0).bold(),
+        "❯".truecolor(255, 60, 90).bold(),
+        "❯".truecolor(180, 50, 230).bold())
 }
 
 // All terminal searches share the same viewport and cancellation behavior.
+// One request slot per domain, as in 0.8.0, so a whole search runs in one wave.
+// Capped so large suggestion runs don't flood shared registry servers.
+fn search_permits(domains: usize) -> Arc<Semaphore> { Arc::new(Semaphore::new(domains.clamp(1, 40))) }
+
 async fn check_and_print(client: &Client, domains: Vec<(String, &'static str)>, cache: Option<&Cache>, _interactive: bool, prices: tokio::sync::watch::Receiver<pricing::Catalog>) -> ui::Results {
-    let sem = Arc::new(Semaphore::new(10));
+    let sem = search_permits(domains.len());
     let labels = domains.iter().map(|(name, tld)| format!("{name}.{tld}")).collect();
     let checks: FuturesUnordered<_> = domains.into_iter().enumerate().map(|(i, (name, tld))| {
         let client = client.clone();
@@ -578,7 +602,7 @@ async fn search_and_print(client: &Client, name: &str, explicit: Option<&'static
     if !plain { tld_list.sort_by_key(|t| tld_rank(t)); }
     let domains = search_domains(name, explicit, &tld_list);
     if plain {
-        let sem = Arc::new(Semaphore::new(10));
+        let sem = search_permits(domains.len());
         let tasks: Vec<_> = domains.into_iter().map(|(name, tld)| {
             check_domain_cached(client.clone(), name, tld, sem.clone(), cache.cloned())
         }).collect();
@@ -854,18 +878,19 @@ fn print_pending() {
 }
 
 // Shows unseen watchlist changes once, then marks them seen.
-fn show_notices() {
+fn show_notices() -> bool {
     let path = watchlist_path();
-    let Some(dir) = path.parent() else { return };
-    if notices::load(dir).is_empty() { return; }
+    let Some(dir) = path.parent() else { return false };
+    if notices::load(dir).is_empty() { return false; }
     // Lock so a background check can't record a change between showing and clearing.
     let _guard = lock_watchlist_at(&path).ok();
     let list = notices::load(dir);
-    if list.is_empty() { return; }
+    if list.is_empty() { return false; }
     println!("  {}", "watchlist updates".truecolor(80, 80, 100));
     for notice in &list { println!("  {}", notices::line(notice)); }
     println!();
     notices::clear(dir);
+    true
 }
 
 async fn cmd_unwatch(domain: &str) -> Result<(), String> {
@@ -1070,6 +1095,10 @@ async fn main() {
     }
 
     // ── interactive mode ───────────────────────────────────────
+    let _session = match ui::Session::enter() {
+        Ok(session) => session,
+        Err(error) => { eprintln!("dott: Cannot open terminal: {error}"); return; }
+    };
     print_cat();
     show_notices();
     std::thread::spawn(|| prepare_notifier(true));
@@ -1542,7 +1571,7 @@ Registrar URL: https://brsmedia.fm"#, true),
             let mut stream = accept(&listener);
             stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
             let mut request = [0; 4096];
-            stream.read(&mut request).unwrap();
+            assert!(stream.read(&mut request).unwrap() > 0);
             stream.write_all(prefix).unwrap();
             held.recv_timeout(Duration::from_secs(5)).unwrap();
         });

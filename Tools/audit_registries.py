@@ -84,7 +84,7 @@ def whois(server, domain):
                 kept.append(line)
                 if lower in ('domain:', 'domain status:') and index + 1 < len(lines):
                     kept.append(lines[index + 1])
-            elif re.match(r'^(?:%\s*)?(?:no match|not found|domain not found|no entries found|the queried object|>>> domain .* available for registration|whois limit|query rate|error:|access denied|this domain .*reserved|this domain .*blocked)', lower):
+            elif re.match(r'^(?:%\s*)?(?:no match|[a-z0-9.-]+ - no match|not found|domain not found|no entries found|the queried object|>>> domain .* available for registration|whois limit|query rate|error:|access denied|this domain .*reserved|this domain .*blocked)', lower):
                 kept.append(line)
         return {'server': server, 'body': '\n'.join(kept), 'raw_bytes': len(text), 'empty_after_sanitizing': not kept}
     except (OSError, ValueError) as error:
