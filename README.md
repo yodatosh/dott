@@ -38,8 +38,8 @@ echo myname | dott          # pipe mode (plain)
 ```
 
 ```text
-  ✓  myname.com   $11.08/yr
-  ✓  myname.org   $7.98/yr
+  ✓  myname.com   $11.08 on Porkbun
+  ✓  myname.org   $7.98 on Porkbun
   ★  myname.dev   reserved
   ?  myname.gg
   ✗  myname.io    reg 2014-03-02  upd 2025-08-01  exp 2026-08-14
