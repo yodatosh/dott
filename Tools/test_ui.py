@@ -24,9 +24,13 @@ ANSI = re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]')
 
 @functools.cache
 def test_binary():
-    binaries = [p for p in (ROOT / 'target/debug/deps').glob('dott-*')
-                if p.is_file() and '.' not in p.name and os.access(p, os.X_OK)]
-    for binary in sorted(binaries, key=lambda p: p.stat().st_mtime, reverse=True):
+    # Ask cargo where the test binary is; its directory layout changes between releases.
+    built = subprocess.run(['cargo', 'test', '--locked', '--no-run', '--message-format=json'],
+                           cwd=ROOT, capture_output=True, text=True)
+    binaries = [Path(message['executable']) for message in map(json.loads, built.stdout.splitlines())
+                if message.get('reason') == 'compiler-artifact' and message.get('executable')
+                and message.get('profile', {}).get('test')]
+    for binary in binaries:
         listed = subprocess.run([str(binary), '--list'], capture_output=True, text=True, timeout=5)
         if 'ui::tests::terminal_fixture: test' in listed.stdout:
             return binary
