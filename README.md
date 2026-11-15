@@ -105,7 +105,7 @@ Changes (became available, was registered, now reserved) also show when you open
 
 ## How it works
 
-Each domain is checked against the registry's RDAP server, WHOIS (port 43) and Cloudflare DNS-over-HTTPS. Positive registration or protection evidence wins over missing-record replies; missing DNS never means available. Interactive mode pre-opens connections for your chosen extensions (no domain names sent). "Available" means no registration was found — not a guarantee a registrar will sell it. See the [registry audit](REGISTRY_AUDIT.md) for coverage and limits.
+Each domain is checked against the registry's RDAP server, WHOIS (port 43) and Cloudflare DNS-over-HTTPS. Positive registration or protection evidence wins over missing-record replies; missing DNS never means available. Interactive mode pre-opens connections for your chosen extensions (no domain names sent). "Available" means no registration was found — not a guarantee a registrar will sell it.
 
 For `.fyi`, `.live`, and `.computer`, missing registrations also get a registry DPML lookup. Matching trademark-protection records show `★ trademark protected`, never an available price. `/details` explains the record; coverage can have registry and registrar exceptions. These lookups are shared and cached in memory for 60 seconds.
 
