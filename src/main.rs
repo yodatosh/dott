@@ -626,20 +626,9 @@ fn merge_retry(previous: &mut ui::Results, refreshed: ui::Results) {
     }
 }
 
-async fn print_update(handle: tokio::task::JoinHandle<Option<String>>) {
-    if let Ok(Some(version)) = handle.await {
+fn print_update(notice: &mut Option<String>) {
+    if let Some(version) = notice.take() {
         eprintln!("  update available → {}  (v{})", update::update_hint(), version);
-    }
-}
-
-async fn try_print_update_if_ready(
-    slot: &mut Option<tokio::task::JoinHandle<Option<String>>>,
-) {
-    if let Some(handle) = slot
-        && handle.is_finished()
-        && let Some(taken) = slot.take()
-    {
-        print_update(taken).await;
     }
 }
 
@@ -1042,10 +1031,8 @@ async fn main() {
         return;
     }
 
-    let mut update_check: Option<tokio::task::JoinHandle<Option<String>>> =
-        if !plain && io::stdin().is_terminal() && std::env::var_os("DOTT_NO_UPDATE_CHECK").is_none() {
-            Some(tokio::spawn(update::check_for_update(client.clone())))
-        } else { None };
+    let mut update_notice =
+        if !plain && io::stdin().is_terminal() { update::check_for_update(client.clone()) } else { None };
 
     // Saved /tlds choices apply to terminal searches only; --tlds overrides them for this run.
     let mut active_tlds = selected_tlds.or_else(|| if plain { None } else { extensions::load() });
@@ -1074,7 +1061,7 @@ async fn main() {
         } else {
             check_and_print(&client, domains, None, false, pricing::start(&client)).await;
         }
-        if let Some(h) = update_check.take() { print_update(h).await; }
+        print_update(&mut update_notice);
         return;
     }
 
@@ -1090,7 +1077,7 @@ async fn main() {
         };
         let tld_list = search_tlds(explicit_tld, active_tlds.as_deref());
         search_and_print(&client, &name, explicit_tld, tld_list, plain, None, false, None).await;
-        if let Some(h) = update_check.take() { print_update(h).await; }
+        print_update(&mut update_notice);
         return;
     }
 
@@ -1120,7 +1107,7 @@ async fn main() {
         match input {
             None => {
                 println!("\n  {}\n", farewell().truecolor(180, 140, 200));
-                if let Some(h) = update_check.take() { print_update(h).await; }
+                print_update(&mut update_notice);
                 break;
             }
             Some(input) => {
@@ -1128,7 +1115,7 @@ async fn main() {
                 if input.is_empty() { continue; }
                 if input == "exit" || input == "quit" || input == "q" {
                     println!("\n  {}\n", farewell().truecolor(180, 140, 200));
-                    if let Some(h) = update_check.take() { print_update(h).await; }
+                    print_update(&mut update_notice);
                     break;
                 }
 
@@ -1155,7 +1142,7 @@ async fn main() {
                     };
                     let domains = suggestions.iter().flat_map(|name| tlds.iter().map(move |tld| (name.clone(), *tld))).collect();
                     last_results = check_and_print(&client, domains, Some(&cache), true, session_prices.clone()).await;
-                    try_print_update_if_ready(&mut update_check).await;
+                    print_update(&mut update_notice);
                     continue;
                 }
 
@@ -1231,7 +1218,7 @@ async fn main() {
                 }
                 if input == "/update" {
                     // Discard the startup notice: an explicit update supersedes it.
-                    if let Some(handle) = update_check.take() { handle.abort(); }
+                    update_notice = None;
                     if let Err(error) = update::run(&client).await {
                         eprintln!("dott: {error}");
                     }
@@ -1250,7 +1237,7 @@ async fn main() {
                 let tlds = search_tlds(explicit_tld, active_tlds.as_deref());
                 last_results = search_and_print(&client, &name, explicit_tld, tlds, false, Some(&cache), true, Some(session_prices.clone())).await;
                 last_name = Some(name);
-                try_print_update_if_ready(&mut update_check).await;
+                print_update(&mut update_notice);
             }
         }
     }

@@ -41,9 +41,11 @@ fn newer(latest: &str, current: &str) -> bool {
     latest.pre.is_empty() && latest.cmp_precedence(&current).is_gt()
 }
 
-async fn latest(client: &Client, timeout: Duration) -> Result<String, String> {
+const LATEST: &str = "https://api.github.com/repos/yodatosh/dott/releases/latest";
+
+async fn latest(client: &Client, endpoint: &str, timeout: Duration) -> Result<String, String> {
     let json: serde_json::Value = client
-        .get(format!("https://api.github.com/repos/{REPO}/releases/latest"))
+        .get(endpoint)
         .header("User-Agent", concat!("dott/", env!("CARGO_PKG_VERSION")))
         .timeout(timeout).send().await.map_err(|e| e.to_string())?
         .error_for_status().map_err(|e| e.to_string())?
@@ -66,28 +68,38 @@ struct Cache {
     latest: Option<String>,
 }
 
-fn cached_update(path: &Path, now: u64) -> Option<Option<String>> {
-    let cache: Cache = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
-    if cache.checked_at > now || now - cache.checked_at >= 86400 { return None; }
-    Some(cache.latest.filter(|v| newer(v, env!("CARGO_PKG_VERSION"))))
-}
-
-pub async fn check_for_update(client: Client) -> Option<String> {
-    if std::env::var_os("DOTT_NO_UPDATE_CHECK").is_some() { return None; }
-    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
-    let path = PathBuf::from(home).join(".dott/update-check.json");
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
-    if let Some(version) = cached_update(&path, now) { return version; }
-    // Cache unsuccessful attempts too, so offline usage doesn't retry every invocation.
-    let version = latest(&client, Duration::from_secs(3)).await.ok();
-    let cache = Cache { checked_at: now, latest: version.clone() };
+fn save(path: &Path, cache: &Cache) {
     if let Some(parent) = path.parent()
         && fs::create_dir_all(parent).is_ok()
-        && let Ok(bytes) = serde_json::to_vec(&cache)
+        && let Ok(bytes) = serde_json::to_vec(cache)
     {
         let _ = fs::write(path, bytes);
     }
-    version.filter(|v| newer(v, env!("CARGO_PKG_VERSION")))
+}
+
+/// Returns the saved notice immediately; a stale check refreshes in the background
+/// for the next run, so no command waits on GitHub.
+fn start_at(client: Client, path: PathBuf, endpoint: String, now: u64) -> Option<String> {
+    let saved: Option<Cache> = fs::read(&path).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok());
+    let previous = saved.as_ref().and_then(|cache| cache.latest.clone());
+    if !saved.as_ref().is_some_and(|cache| cache.checked_at <= now && now - cache.checked_at < 86400) {
+        // Stamp before fetching so slow or offline networks still try at most once a day.
+        save(&path, &Cache { checked_at: now, latest: previous.clone() });
+        // A failed fetch keeps the stamp above, including the previously known release.
+        tokio::spawn(async move {
+            if let Ok(version) = latest(&client, &endpoint, Duration::from_secs(3)).await {
+                save(&path, &Cache { checked_at: now, latest: Some(version) });
+            }
+        });
+    }
+    previous.filter(|v| newer(v, env!("CARGO_PKG_VERSION")))
+}
+
+pub fn check_for_update(client: Client) -> Option<String> {
+    if std::env::var_os("DOTT_NO_UPDATE_CHECK").is_some() { return None; }
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
+    start_at(client, PathBuf::from(home).join(".dott/update-check.json"), LATEST.into(), now)
 }
 
 struct Staging(PathBuf);
@@ -153,7 +165,7 @@ pub async fn run(client: &Client) -> Result<(), String> {
     if !standalone(&path) {
         return Err("This copy of dott wasn't installed by the curl installer. Reinstall with: curl -fsSL https://raw.githubusercontent.com/yodatosh/dott/master/install.sh | sh".into());
     }
-    let version = latest(client, Duration::from_secs(15)).await?;
+    let version = latest(client, LATEST, Duration::from_secs(15)).await?;
     if !newer(&version, env!("CARGO_PKG_VERSION")) {
         println!("dott {} is up to date.", env!("CARGO_PKG_VERSION"));
         return Ok(());
@@ -202,18 +214,71 @@ mod tests {
         assert_eq!(fs::read(destination).unwrap(), b"old binary");
     }
 
-    #[test]
-    fn daily_cache_throttles_successes_and_failures_but_expires() {
+    fn read_cache(path: &Path) -> (u64, Option<String>) {
+        let cache: Cache = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        (cache.checked_at, cache.latest)
+    }
+
+    async fn wait_for(path: &Path, expected: (u64, Option<String>)) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while read_cache(path) != expected {
+            assert!(std::time::Instant::now() < deadline, "cache never became {expected:?}");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn saved_notice_returns_without_waiting_for_held_github_response() {
+        use std::io::{Read, Write};
         let staging = Staging::new(&std::env::temp_dir()).unwrap();
-        let path = staging.0.join("cache.json");
-        fs::write(&path, br#"{"checked_at":1000,"latest":"1.0.0"}"#).unwrap();
-        assert_eq!(cached_update(&path, 1001), Some(Some("1.0.0".into())));
-        assert_eq!(cached_update(&path, 1000 + 86400), None);
-        assert_eq!(cached_update(&path, 999), None);
-        fs::write(&path, br#"{"checked_at":1000,"latest":null}"#).unwrap();
-        assert_eq!(cached_update(&path, 1001), Some(None));
+        let path = staging.0.join("update-check.json");
+        fs::write(&path, br#"{"checked_at":1000,"latest":"99.0.0"}"#).unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}/latest", listener.local_addr().unwrap());
+        let (release, held) = std::sync::mpsc::channel::<()>();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 2048];
+            let size = stream.read(&mut request).unwrap();
+            assert!(std::str::from_utf8(&request[..size]).unwrap().starts_with("GET /latest "));
+            held.recv_timeout(Duration::from_secs(10)).unwrap();
+            let body = r#"{"tag_name":"v100.0.0","draft":false,"prerelease":false}"#;
+            let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+        });
+        let now = 1000 + 86400;
+        // Stale cache: the saved notice comes back at once and the attempt is stamped first.
+        assert_eq!(start_at(Client::new(), path.clone(), endpoint.clone(), now), Some("99.0.0".into()));
+        assert_eq!(read_cache(&path), (now, Some("99.0.0".into())));
+        // Fresh stamp: no second request while the first is still held open.
+        assert_eq!(start_at(Client::new(), path.clone(), endpoint, now + 1), Some("99.0.0".into()));
+        release.send(()).unwrap();
+        wait_for(&path, (now, Some("100.0.0".into()))).await;
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn failed_or_missing_checks_keep_known_release_and_retry_after_a_day() {
+        let staging = Staging::new(&std::env::temp_dir()).unwrap();
+        let path = staging.0.join("update-check.json");
+        let closed = {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            format!("http://{}/latest", listener.local_addr().unwrap())
+        };
+        // First run: nothing saved yet, so no notice; the stamp throttles retries.
+        assert_eq!(start_at(Client::new(), path.clone(), closed.clone(), 1000), None);
+        assert_eq!(read_cache(&path), (1000, None));
+        fs::write(&path, br#"{"checked_at":1000,"latest":"99.0.0"}"#).unwrap();
+        assert_eq!(start_at(Client::new(), path.clone(), closed.clone(), 1000 + 86399), Some("99.0.0".into()));
+        assert_eq!(read_cache(&path), (1000, Some("99.0.0".into())));
+        // A clock that moved backwards counts as stale; a failure keeps the known release.
+        assert_eq!(start_at(Client::new(), path.clone(), closed, 999), Some("99.0.0".into()));
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(read_cache(&path), (999, Some("99.0.0".into())));
+        // Older or malformed saved versions never produce a notice.
         fs::write(&path, br#"{"checked_at":1000,"latest":"0.7.0.1"}"#).unwrap();
-        assert_eq!(cached_update(&path, 1001), Some(None));
+        assert_eq!(start_at(Client::new(), path.clone(), String::new(), 1001), None);
+        fs::write(&path, br#"{"checked_at":1000,"latest":"0.1.0"}"#).unwrap();
+        assert_eq!(start_at(Client::new(), path, String::new(), 1001), None);
     }
 
     #[cfg(unix)]

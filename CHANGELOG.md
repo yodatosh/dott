@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.0 — 2026-11-03
+## 0.9.0 — 2026-11-15
 
 **New**
 - Interactive mode opens on a clean window with the logo and a prompt on the bottom row.
@@ -18,11 +18,12 @@
 
 **Changed**
 - Results appear as each check finishes; pricing never delays them.
-- Rows show the Porkbun price for available names and only the expiry month for
-  taken ones.
+- Rows show the Porkbun price for available names and registered, updated and
+  expiry dates for taken ones; narrow terminals keep only the expiry.
 - Inconclusive results say why (timeout, rate limit, malformed reply).
 - Suggestions include later keywords and combinations.
 - Registry routing uses a bundled IANA RDAP directory.
+- Update checks never delay a command; a new release shows on the next run.
 
 **Fixed**
 - Trademark-protected (DPML) `.live`, `.computer` and `.fyi` labels no longer
